@@ -1,0 +1,13 @@
+const {test}=require('node:test');const assert=require('node:assert/strict');const E=require('../engine.js');
+const fc={'Work Order Nbr':'W1','Manifest Scan Date':'2026-11-20','Shipper':'UPS','Tracking Number':'T1','Product Name':'Sabrina'};
+const sap={'Customer Reference':'W1','SD Document':'D1','Item (SD)':'20',Material:'M1','Confirmed Quantity':'1'};
+const stock={'SD Document':'D1','Item (SD)':'20',Material:'M1','Storage Location':'1100',Unrestricted:1,'Blocked Stock':0};
+const run=(x={})=>E.reconcile({fc:[fc],sap:[sap],stock:[stock],ups:[{'Tracking Number':'T1','Ship Date':'2026-11-20'}],sf:[],awb:[],date:'2026-11-20',cleanDate:String,...x});
+test('duplicate UPS events never become shoe quantity',()=>{const r=run({ups:[{'Tracking Number':'T1'},{'Tracking Number':'T1'}]});assert.equal(r.orders.length,1);assert.equal(r.upsRows[0].UPS_紀錄數,2);assert.match(r.upsRows[0].數量核對,/未以紀錄數/);});
+test('stock retains location, batch and blocked dimensions',()=>{const r=run({stock:[stock,{...stock,'Storage Location':'1200',Unrestricted:0,'Blocked Stock':2}]});assert.equal(r.orders[0].stockRows.length,2);assert.equal(r.upsRows[0].MB52_Blocked_Stock,2);assert.equal(r.orders.length,1);});
+test('conflicting FC rows do not silently pick the last row',()=>{const r=run({fc:[fc,{...fc,'Tracking Number':'T2'}]});assert.equal(r.orders[0].ambiguous,true);assert.equal(r.orders[0].sapDoc,'');});
+test('blank WO excluded; repeated exact WO counts once',()=>{const r=run({fc:[fc,{...fc},{...fc,'Work Order Nbr':''}]});assert.equal(r.orders.length,1);assert.ok(r.anomalies.some(x=>x.異常類型==='FC 缺少 Work Order Nbr'));});
+test('ambiguous SAP not assigned first record',()=>{const r=run({sap:[sap,{...sap,'SD Document':'D2'}]});assert.equal(r.orders[0].sapDoc,'');});
+test('missing AWB never falls back to manual value',()=>assert.equal(run({fc:[{...fc,AWB:'OLD'}]}).orders[0].awb,''));
+test('SF records never match UPS work orders',()=>{const r=run({sf:[{'Work Order Number':'W1','Tracking Number':'T1',Qty:1}]});assert.equal(r.sfRows[0].FC_工單存在,false);});
+test('SF missing quantities are pending, not zero equals zero',()=>{const r=run({fc:[{...fc,Shipper:'BAOZUN'}],sap:[{...sap,'Confirmed Quantity':''}],sf:[{'Work Order Number':'W1','Tracking Number':'T1',Qty:''}]});assert.equal(r.sfRows[0].Qty與SAP一致,'待確認');});
