@@ -6,27 +6,26 @@ Browser-only processing; no source files leave the browser. Runtime dependencies
 
 ## Daily workflow
 
-1. Select Manifest Scan Date, then import FC / ZRSD1019 / MB52 / UPS / SF / AWB files together.
-2. Choose the FC worksheet explicitly. Multiple SAP or carrier batches are rejected; remove redundant files first. Reimporting the same filename replaces that file.
+1. Import the FC, SAP ZRSD1019, MB52, UPS, SF Baozun and AWB mapping files.
+2. Choose the FC worksheet explicitly and set separate dates for Orders Update, Data Shipping and the Shipping Status period. The reconciliation reference date is separate from these output filters.
 3. Optional: load existing XLSX workbooks as separate Orders Update, Data Shipping and Shipping Status templates.
-4. Run, inspect exceptions, then download individual workbooks or ZIP. Missing templates produce explicitly named DRAFT workbooks. Unsupported template layouts block only the affected formal workbook.
-5. ZIP includes processing audit metadata. The last 30 audit entries are kept in this browser localStorage; source rows are not persisted there.
+4. Run, inspect exceptions and quantity references, then download individual workbooks or ZIP. Missing templates produce explicitly named DRAFT workbooks. Unsupported template layouts block only the affected formal workbook.
+5. ZIP includes processing audit metadata and selected report dates. The last 30 audit entries are kept in this browser localStorage; source rows are not persisted there.
 
-## Rules
+## Confirmed and pending rules
 
-- Filter by Manifest date, count distinct nonblank work orders. This is a work-order count, not an independently confirmed shoe-pair quantity. Conflicting FC rows are flagged and not silently resolved.
-- FC Customer Reference joins SAP. Conflicting documents/items remain unresolved. MB52 matches document plus available material/item and retains storage location, batch and stock states. Stock is never subtracted from actual shipment.
-- UPS tracking events are retained. Record counts do not represent shoe-pair quantities; UPS quantity validation remains pending until a quantity field/unit is confirmed.
-- SF uses work order, carrier, tracking and ship group; repeated work-order quantities are flagged for grain review. Total footer rows are excluded.
-- AWB comes only from OrderNumber / ConsolidationShipmentId. Missing/conflicting mappings stay blank.
-- Expect Shipment is not calculated. An uploaded Shipping Status template retains its existing Expect cells and historical dates.
-- XLSX templates are edited by changing worksheet XML inside the original ZIP; styles, other sheets and package parts are retained. Supported tabular bodies may resize and row formulas shift. Merged data areas, Excel tables and shared/array formulas are blocked for review. Shipping Status currently requires the target date and product entries to exist in its Summary and Detail shipment layout.
-- Legacy XLS can be read as input, but format-preserving templates must be XLSX. This does not claim lossless XLS conversion.
+- Orders Update and Data Shipping each filter FC by their own Manifest Scan Date. Shipping Status takes a start/end date and updates only dates present in the selected FC source.
+- FC Customer Reference joins SAP. Conflicting documents/items remain unresolved. MB52 matches document plus available material/item and retains storage location, batch and stock states.
+- Shipping Status currently counts distinct nonblank Work Order Nbr by Manifest date and Product Name. It is explicitly a work-order count, not a certified shoe-pair quantity. Actually Shipment business grain must be confirmed against the official workbook; Expect Shipment is not calculated.
+- UPS and SF Baozun reconciliation remain separate. Tracking events are not shoe-pair quantities. UPS pair-quantity validation is pending until a quantity field and unit are confirmed.
+- SF Qty is shown against SAP Confirmed Quantity as a reference, and alongside MB52 Unrestricted / Blocked Stock with an arithmetic delta. This is not an approved shipment reconciliation: MB52 is a stock snapshot, not daily shipped quantity. The Exception Report labels these rows as quantity references, not passes.
+- AWB comes only from OrderNumber / ConsolidationShipmentId. Missing/conflicting mappings stay blank; the app never generates AWB values.
+- XLSX templates are edited inside the original ZIP package to preserve sheets/styles and supported formulas. Unsupported layouts block formal output for review. Shipping Status requires each updated date and product to already exist in its Summary and Detail shipment layout.
+- Legacy XLS can be read as input, but format-preserving templates must be XLSX.
 
-## Verification (2026-11-27)
+## Golden Sample status
 
-8 synthetic reconciliation regression tests: `node --test tests/engine.test.cjs`.
-The 11/20 processed sample reproduced 364 FC work-order / SAP / MB52 matches; 366 UPS events with 364 distinct tracking numbers; one SF detail row. The supplied comparison workbook matched 3,701 checked work-order fields and 364 tracking summaries. This is not independent end-to-end golden certification: the FC base was extracted from the processed Data Shipping sample, SF is partial, and Shipping Status/Expect rules remain pending.
+The 2026-11-20 processed sample previously reproduced 364 FC work-order / SAP / MB52 matches, 366 UPS events with 364 distinct tracking numbers, and one SF detail row. The FC base was extracted from a processed Data Shipping sample, and the SF file was partial. These checks do not certify the full outputs. Independent raw files and manual golden workbooks are still required for row-by-row acceptance.
 
 ## Development
 

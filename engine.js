@@ -29,7 +29,7 @@ function reconcile({fc,sap,stock,ups,sf,awb,date,cleanDate}){
   const awbValue=av.length===1?val(ar[0],'ConsolidationShipmentId'):'';if(av.length>1)add('高','AWB 對照衝突',wo,'同 OrderNumber 有多個 ConsolidationShipmentId');
   const ur=c==='UPS'&&!ambiguous?ups.filter(x=>key(val(x,'Tracking Number'))===track&&track):[];
   const fr=c==='SF'&&!ambiguous?sf.filter(x=>key(val(x,'Work Order Number','Work Order Nbr'))===wo):[];
-  const o={wo,fcDate:date,shipper,carrier:c,track,sapDoc,confirmedQty:sapDoc?sum(sr,'Confirmed Quantity'):'',mbDoc:stockRows.length?sapDoc:'',sapMatch:!!sapDoc,stockMatch:!!stockRows.length,upsCount:ur.length,upsMatch:!!ur.length,awb:awbValue,sfRows:fr,source:r,sourceRows:rows,stockRows,ambiguous};orders.push(o);
+  const dates=[...new Set(rows.map(x=>cleanDate(val(x,'Manifest Scan Date'))).filter(Boolean))];const o={wo,fcDate:dates.length===1?dates[0]:dates.join(', '),shipper,carrier:c,track,sapDoc,confirmedQty:sapDoc?sum(sr,'Confirmed Quantity'):'',sapRows:sr,mbDoc:stockRows.length?sapDoc:'',sapMatch:!!sapDoc,stockMatch:!!stockRows.length,upsCount:ur.length,upsMatch:!!ur.length,awb:awbValue,sfRows:fr,source:r,sourceRows:rows,stockRows,ambiguous};orders.push(o);
   if(!o.sapMatch)add('高','FC 工單缺少 SAP ZRSD1019',wo,'找不到唯一可用的 SAP 對照');
   if(o.sapMatch&&!o.stockMatch)add('中','SAP 訂單缺少 MB52 庫存紀錄',wo,'文件／物料／項次沒有庫存明細；不減少實際出貨');
   if(!track)add('中','FC 缺少 Tracking Number',wo,'追蹤號缺漏或同工單有多個追蹤號');
@@ -50,11 +50,13 @@ function reconcile({fc,sap,stock,ups,sf,awb,date,cleanDate}){
  });
  const sfGroups=index(sf,r=>val(r,'Work Order Number','Work Order Nbr'));
  const sfRows=sf.map(r=>{const wo=key(val(r,'Work Order Number','Work Order Nbr')),o=orders.find(o=>o.wo===wo&&o.carrier==='SF'&&!o.ambiguous),track=key(val(r,'Tracking Number')),group=val(r,'Ship Group ID','Ship Group Nbr'),many=(sfGroups.get(wo)||[]).length>1;
-  const n=qty(val(r,'Qty','Quantity')),sn=o?qty(o.confirmedQty):null,match=!!o&&!many&&n!==null&&sn!==null?n===sn:null;
+  const n=qty(val(r,'Qty','Quantity')),sn=o?qty(o.confirmedQty):null,refMatch=!!o&&!many&&n!==null&&sn!==null?n===sn:null;
+  const unrestricted=o?qty(sum(o.stockRows,'Unrestricted')):null,blocked=o?qty(sum(o.stockRows,'Blocked Stock')):null;
+  const mb52Delta=n!==null&&unrestricted!==null?n-unrestricted:'';
   const groupMatch=!!o&&(!group||key(group)===key(val(o.source,'Ship Group Nbr')));
-  const result=!o?'SF 工單未出現在 FC':many?'SF 多筆明細，數量粒度待確認':match===null?'SF / SAP 數量缺漏':!match?'SF Qty 與 SAP 數量不一致':!groupMatch?'Ship Group 不一致':track!==o.track?'Tracking 不一致':'FC Tracking 一致';
-  if(result!=='FC Tracking 一致')add('中',result,wo,'SF 與 UPS 各自獨立核對');
-  return {Work_Order_Number:wo,Ship_Group_ID:group,Tracking_Number:track,Mother_Waybill:val(r,'Mother waybill'),Estimated_Ship_Date:cleanDate(val(r,'Estimated Ship Date','Est Ship Date')),Qty:val(r,'Qty','Quantity'),SAP_SD_Document:o?.sapDoc||'',SAP_Confirmed_Qty:o?.confirmedQty??'',Qty與SAP一致:match===null?'待確認':match,SAP_工單存在:!!o?.sapMatch,MB52_紀錄存在:!!o?.stockMatch,FC_工單存在:!!o,FC_Tracking一致:!!o&&track===o.track,結果:result};
+  const result=!o?'SF 工單未出現在 FC':many?'SF 多筆明細，數量粒度待確認':!groupMatch?'Ship Group 不一致':track!==o.track?'Tracking 不一致':refMatch===false?'FC Tracking 一致；SAP Confirmed Qty 僅供參考，MB52 數量待判讀':'FC Tracking 一致；數量未認證';
+  if(!o||many||!groupMatch||track!==o?.track)add('中',result,wo,'SF 與 FC 比對；SAP Confirmed Qty 僅供參考。MB52 是庫存快照，差額不代表出貨差異');
+  return {Work_Order_Number:wo,Ship_Group_ID:group,Tracking_Number:track,Mother_Waybill:val(r,'Mother waybill'),Estimated_Ship_Date:cleanDate(val(r,'Estimated Ship Date','Est Ship Date')),Qty:val(r,'Qty','Quantity'),SAP_SD_Document:o?.sapDoc||'',SAP_Confirmed_Qty_Reference:o?.confirmedQty??'',Qty_vs_SAP_Reference:refMatch===null?'待確認':refMatch?'相同':'不同',Qty與SAP一致:refMatch===null?'待確認':refMatch?'參考相同':'參考不同',MB52_Unrestricted_Reference:unrestricted??'',MB52_Blocked_Stock_Reference:blocked??'',SF_Qty_minus_MB52_Unrestricted_Reference:mb52Delta,MB52_Interpretation:'庫存快照，不等同當日出貨量；差額未認證',SAP_工單存在:!!o?.sapMatch,MB52_紀錄存在:!!o?.stockMatch,FC_工單存在:!!o,FC_Tracking一致:!!o&&track===o.track,數量核對:'待確認 SF Qty 單位及 MB52 業務規則',結果:result};
  });
  return {orders,upsRows,sfRows,anomalies};
 }

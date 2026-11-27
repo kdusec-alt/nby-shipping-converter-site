@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <meta name="description" content="NBY Shipping Data Converter — Daily reconciliation · v2" />
   <title>NBY Shipping Data Converter</title>
-  <link rel="stylesheet" href="styles.css?v=2.1" />
+  <link rel="stylesheet" href="styles.css?v=2.2" />
   <script src="vendor/xlsx.full.min.js"></script>
   <script src="vendor/jszip.min.js"></script>
   <script defer src="engine.js"></script>
   <script defer src="templates.js"></script>
-  <script defer src="app.js?v=2"></script>
+  <script defer src="app.js?v=2.2.2"></script>
 </head>
 <body>
   <header class="topbar">
@@ -20,18 +20,20 @@
   <main>
     <section class="hero">
       <div><p class="eyebrow">DAILY SHIPPING WORKSPACE</p><h1>出貨資料轉檔與逐筆核對</h1><p class="lede">匯入 Nike FC、SAP、UPS、SF Baozun 來源，再與人工成品逐筆比對。原始檔不會上傳到伺服器。</p></div>
-      <label class="date-control"><span id="dateLabel">核對日期</span><input id="asOfDate" type="date" value="2026-11-20" /></label>
+      <label class="date-control"><span id="dateLabel">工單核對基準日</span><input id="asOfDate" type="date" value="" /></label>
     </section>
 
     <section class="upload-panel">
       <div class="panel-head"><div><h2>1. 匯入來源與人工成品</h2><p>可一次選取多個 .xls、.xlsx、.csv 檔；系統依欄位辨識資料類型與工作表。</p></div><label class="primary-button" for="fileInput">選擇 Excel / CSV 檔</label><input id="fileInput" type="file" multiple accept=".xls,.xlsx,.xlsm,.csv" /></div>
       <div id="dropZone" class="drop-zone"><span class="upload-icon">↑</span><div><strong>拖曳檔案到這裡</strong><span>支援多檔匯入；不會修改來源檔</span></div></div>
       <div id="sourceList" class="source-list empty">尚未匯入檔案</div>
+      <div class="report-dates"><label>Orders Update 日期<input id="ordersDate" type="date" value=""></label><label>Data Shipping 日期<input id="dataDate" type="date" value=""></label><label>Shipping Status 起日<input id="statusStart" type="date" value=""></label><label>Shipping Status 迄日<input id="statusEnd" type="date" value=""></label></div>
       <div class="setup-grid"><label>本次 FC 來源<select id="fcSource"><option value="">請先匯入來源</option></select></label></div>
       <details class="template-panel"><summary>正式 Excel 樣板（保留原始格式、公式與工作表）</summary><p>分別載入既有 .xlsx 成品作為樣板。樣板不作為原始資料；未提供時輸出 DRAFT 資料版。若樣板結構無法安全填入，該正式檔不會產生。</p><div class="setup-grid">
       <label>Orders Update 樣板<input data-template="orders" type="file" accept=".xlsx"></label>
       <label>Data Shipping 樣板<input data-template="data" type="file" accept=".xlsx"></label>
       <label>Shipping Status 樣板<input data-template="status" type="file" accept=".xlsx"></label></div></details>
+      <div class="rule-note"><strong>尚未通過正式 Golden Sample 驗收</strong><span>出貨統計以不重複工單計算，尚未確認等於鞋雙數。MB52 是庫存快照，不直接代表當日出貨量。</span></div>
       <div class="action-row"><button id="runButton" class="primary-button" disabled>執行轉檔與核對</button><button id="clearButton" class="secondary-button" disabled>清除本次資料</button><span id="runStatus" class="status-text"></span></div>
     </section>
 
