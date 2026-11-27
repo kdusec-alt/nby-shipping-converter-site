@@ -5,54 +5,54 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <meta name="description" content="NBY Shipping Data Converter — Daily reconciliation · v2" />
   <title>NBY Shipping Data Converter</title>
-  <link rel="stylesheet" href="styles.css?v=2.3" />
+  <link rel="stylesheet" href="styles.css?v=2.4" />
   <script src="vendor/xlsx.full.min.js"></script>
   <script src="vendor/jszip.min.js"></script>
   <script defer src="engine.js"></script>
   <script defer src="templates.js"></script>
-  <script defer src="app.js?v=2.3"></script>
+  <script defer src="app.js?v=2.4"></script>
 </head>
 <body>
   <header class="topbar">
-    <div class="brand"><span class="brand-mark">N</span><div><strong>NBY Shipping Data Converter</strong><small>Daily reconciliation · v2</small></div></div>
-    <div class="top-actions"><button id="langToggle" class="language-button" type="button">EN</button><div class="privacy"><span class="privacy-dot"></span><span id="privacyText">檔案僅在此瀏覽器處理</span></div></div>
+    <div class="brand"><span class="brand-mark">N</span><div><strong>NBY Shipping Data Converter</strong><small data-i18n="brandSub">Daily reconciliation · v2</small></div></div>
+    <div class="top-actions"><button id="langToggle" class="language-button" type="button" aria-label="Switch language">EN</button><div class="privacy"><span class="privacy-dot"></span><span id="privacyText" data-i18n="privacy">檔案僅在此瀏覽器處理</span></div></div>
   </header>
   <main>
     <section class="hero">
-      <div><p class="eyebrow">DAILY SHIPPING WORKSPACE</p><h1>出貨資料轉檔與逐筆核對</h1><p class="lede">匯入 Nike FC、SAP、UPS、SF Baozun 來源，再與人工成品逐筆比對。原始檔不會上傳到伺服器。</p></div>
-      <label class="date-control"><span id="dateLabel">工單核對基準日</span><input id="asOfDate" type="date" value="" /></label>
+      <div><p class="eyebrow" data-i18n="eyebrow">DAILY SHIPPING WORKSPACE</p><h1 data-i18n="heroTitle">出貨資料轉檔與逐筆核對</h1><p class="lede" data-i18n="lede">匯入 Nike FC、SAP、UPS、SF Baozun 來源，再與人工成品逐筆比對。原始檔不會上傳到伺服器。</p></div>
+      <label class="date-control"><span id="dateLabel" data-i18n="dateLabel">工單核對基準日</span><input id="asOfDate" type="date" value="" /></label>
     </section>
 
     <section class="upload-panel">
-      <div class="panel-head"><div><h2>1. 匯入來源檔</h2><p>五類來源分開上傳與驗欄；可多選檔案，但不同日期或重複批次不會自動合併。</p></div></div>
+      <div class="panel-head"><div><h2 data-i18n="uploadTitle">1. 匯入來源檔</h2><p data-i18n="uploadHint">五類來源分開上傳與驗欄；可多選檔案，但不同日期或重複批次不會自動合併。</p></div></div>
       <div class="source-grid">
-        <article class="source-upload"><div><h3>Nike FC</h3><span data-source-status="Nike FC" class="source-readiness">等待檔案</span></div><label class="secondary-button" for="fcFiles">Add Files / 新增檔案</label><button type="button" class="secondary-button" data-replace-source="Nike FC">Replace File / 替換檔案</button><input id="fcFiles" data-source-file="Nike FC" type="file" multiple accept=".xls,.xlsx,.xlsm,.csv"></article>
-        <article class="source-upload"><div><h3>SAP ZRSD1019</h3><span data-source-status="SAP ZRSD1019" class="source-readiness">等待檔案</span></div><label class="secondary-button" for="sapFiles">Add Files / 新增檔案</label><button type="button" class="secondary-button" data-replace-source="SAP ZRSD1019">Replace File / 替換檔案</button><input id="sapFiles" data-source-file="SAP ZRSD1019" type="file" multiple accept=".xls,.xlsx,.xlsm,.csv"></article>
-        <article class="source-upload"><div><h3>SAP MB52</h3><span data-source-status="SAP MB52" class="source-readiness">等待檔案</span></div><label class="secondary-button" for="mbFiles">Add Files / 新增檔案</label><button type="button" class="secondary-button" data-replace-source="SAP MB52">Replace File / 替換檔案</button><input id="mbFiles" data-source-file="SAP MB52" type="file" multiple accept=".xls,.xlsx,.xlsm,.csv"></article>
-        <article class="source-upload"><div><h3>UPS</h3><span data-source-status="UPS" class="source-readiness">等待檔案</span></div><label class="secondary-button" for="upsFiles">Add Files / 新增檔案</label><button type="button" class="secondary-button" data-replace-source="UPS">Replace File / 替換檔案</button><input id="upsFiles" data-source-file="UPS" type="file" multiple accept=".xls,.xlsx,.xlsm,.csv"></article>
-        <article class="source-upload"><div><h3>SF Baozun</h3><span data-source-status="SF Baozun" class="source-readiness">等待檔案</span></div><label class="secondary-button" for="sfFiles">Add Files / 新增檔案</label><button type="button" class="secondary-button" data-replace-source="SF Baozun">Replace File / 替換檔案</button><input id="sfFiles" data-source-file="SF Baozun" type="file" multiple accept=".xls,.xlsx,.xlsm,.csv"></article>
+        <article class="source-upload"><div><h3>Nike FC</h3><span data-source-status="Nike FC" class="source-readiness">等待檔案</span></div><label class="secondary-button" for="fcFiles"><span data-i18n="addFiles">新增檔案</span></label><button type="button" class="secondary-button" data-replace-source="Nike FC"><span data-i18n="replaceFile">替換檔案</span></button><input id="fcFiles" data-source-file="Nike FC" type="file" multiple accept=".xls,.xlsx,.xlsm,.csv"></article>
+        <article class="source-upload"><div><h3>SAP ZRSD1019</h3><span data-source-status="SAP ZRSD1019" class="source-readiness">等待檔案</span></div><label class="secondary-button" for="sapFiles"><span data-i18n="addFiles">新增檔案</span></label><button type="button" class="secondary-button" data-replace-source="SAP ZRSD1019"><span data-i18n="replaceFile">替換檔案</span></button><input id="sapFiles" data-source-file="SAP ZRSD1019" type="file" multiple accept=".xls,.xlsx,.xlsm,.csv"></article>
+        <article class="source-upload"><div><h3>SAP MB52</h3><span data-source-status="SAP MB52" class="source-readiness">等待檔案</span></div><label class="secondary-button" for="mbFiles"><span data-i18n="addFiles">新增檔案</span></label><button type="button" class="secondary-button" data-replace-source="SAP MB52"><span data-i18n="replaceFile">替換檔案</span></button><input id="mbFiles" data-source-file="SAP MB52" type="file" multiple accept=".xls,.xlsx,.xlsm,.csv"></article>
+        <article class="source-upload"><div><h3>UPS</h3><span data-source-status="UPS" class="source-readiness">等待檔案</span></div><label class="secondary-button" for="upsFiles"><span data-i18n="addFiles">新增檔案</span></label><button type="button" class="secondary-button" data-replace-source="UPS"><span data-i18n="replaceFile">替換檔案</span></button><input id="upsFiles" data-source-file="UPS" type="file" multiple accept=".xls,.xlsx,.xlsm,.csv"></article>
+        <article class="source-upload"><div><h3>SF Baozun</h3><span data-source-status="SF Baozun" class="source-readiness">等待檔案</span></div><label class="secondary-button" for="sfFiles"><span data-i18n="addFiles">新增檔案</span></label><button type="button" class="secondary-button" data-replace-source="SF Baozun"><span data-i18n="replaceFile">替換檔案</span></button><input id="sfFiles" data-source-file="SF Baozun" type="file" multiple accept=".xls,.xlsx,.xlsm,.csv"></article>
       </div>
-      <div id="sourceList" class="source-list empty">尚未匯入檔案</div>
-      <div class="optional-import"><div><span data-source-status="AWB Map" class="source-readiness">Optional / 選填 · Waiting for File / 等待檔案</span><label class="secondary-button" for="awbFiles">Add AWB / 新增</label><button type="button" class="secondary-button" data-replace-source="AWB Map">Replace AWB / 替換</button><input id="awbFiles" data-source-file="AWB Map" type="file" multiple accept=".xls,.xlsx,.xlsm,.csv"></div><div><span class="source-readiness">Manual Reference / 人工成品與歷史</span><label class="secondary-button" for="referenceFiles">Choose Reference / 選擇檔案</label><input id="referenceFiles" data-source-file="REFERENCE" type="file" multiple accept=".xls,.xlsx,.xlsm,.csv"></div></div><div class="report-dates"><label>Orders Update 日期<input id="ordersDate" type="date" value=""></label><label>Data Shipping 日期<input id="dataDate" type="date" value=""></label><label>Shipping Status 起日<input id="statusStart" type="date" value=""></label><label>Shipping Status 迄日<input id="statusEnd" type="date" value=""></label></div>
-      <div class="setup-grid"><label>本次 FC 來源<select id="fcSource"><option value="">請先匯入來源</option></select></label></div>
-      <details class="template-panel"><summary>正式 Excel 樣板（保留原始格式、公式與工作表）</summary><p>分別載入既有 .xlsx 成品作為樣板。樣板不作為原始資料；未提供時輸出 DRAFT 資料版。若樣板結構無法安全填入，該正式檔不會產生。</p><div class="setup-grid">
-      <label>Orders Update 樣板<input data-template="orders" type="file" accept=".xlsx"></label>
-      <label>Data Shipping 樣板<input data-template="data" type="file" accept=".xlsx"></label>
-      <label>Shipping Status 樣板<input data-template="status" type="file" accept=".xlsx"></label></div></details>
-      <div class="rule-note"><strong>驗收分層</strong><span>檔案讀取、必要欄位驗證、來源匹配、報表產生與人工成品驗收分開顯示。出貨統計目前是工單數；Golden Sample 尚未認證。</span></div>
-      <div class="action-row"><button id="runButton" class="primary-button" disabled>執行轉檔與核對</button><button id="clearButton" class="secondary-button" disabled>清除本次資料</button><span id="runStatus" class="status-text"></span></div>
+      <div id="sourceList" class="source-list empty" data-i18n="noFiles">尚未匯入檔案</div>
+      <div class="optional-import"><div><span data-source-status="AWB Map" class="source-readiness">Optional / 選填 · Waiting for File / 等待檔案</span><label class="secondary-button" for="awbFiles"><span data-i18n="addAwb">新增 AWB</span></label><button type="button" class="secondary-button" data-replace-source="AWB Map" data-i18n="replaceAwb">替換 AWB</button><input id="awbFiles" data-source-file="AWB Map" type="file" multiple accept=".xls,.xlsx,.xlsm,.csv"></div><div><span class="source-readiness" data-i18n="manualReference">Manual Reference / 人工成品與歷史</span><label class="secondary-button" for="referenceFiles"><span data-i18n="chooseReference">選擇參考檔</span></label><input id="referenceFiles" data-source-file="REFERENCE" type="file" multiple accept=".xls,.xlsx,.xlsm,.csv"></div></div><div class="report-dates"><label><span data-i18n="ordersDate">Orders Update 日期</span><input id="ordersDate" type="date" value=""></label><label><span data-i18n="dataDate">Data Shipping 日期</span><input id="dataDate" type="date" value=""></label><label><span data-i18n="statusStart">Shipping Status 起日</span><input id="statusStart" type="date" value=""></label><label><span data-i18n="statusEnd">Shipping Status 迄日</span><input id="statusEnd" type="date" value=""></label></div>
+      <div class="setup-grid"><label><span data-i18n="fcSourceLabel">本次 FC 來源</span><select id="fcSource"><option value="" data-i18n="importFirst">請先匯入來源</option></select></label></div>
+      <details class="template-panel"><summary data-i18n="templateTitle">正式 Excel 樣板（保留原始格式、公式與工作表）</summary><p data-i18n="templateHint">分別載入既有 .xlsx 成品作為樣板。樣板不作為原始資料；未提供時輸出 DRAFT 資料版。若樣板結構無法安全填入，該正式檔不會產生。</p><div class="setup-grid">
+      <label><span data-i18n="ordersTemplate">Orders Update 樣板</span><input data-template="orders" type="file" accept=".xlsx"></label>
+      <label><span data-i18n="dataTemplate">Data Shipping 樣板</span><input data-template="data" type="file" accept=".xlsx"></label>
+      <label><span data-i18n="statusTemplate">Shipping Status 樣板</span><input data-template="status" type="file" accept=".xlsx"></label></div></details>
+      <div class="rule-note"><strong data-i18n="validationHeading">驗收分層</strong><span data-i18n="validationNote">檔案讀取、必要欄位驗證、來源匹配、報表產生與人工成品驗收分開顯示。出貨統計目前是工單數；Golden Sample 尚未認證。</span></div>
+      <div class="action-row"><button id="runButton" class="primary-button" disabled data-i18n="run">執行轉檔與核對</button><button id="clearButton" class="secondary-button" disabled data-i18n="clear">清除本次資料</button><span id="runStatus" class="status-text"></span></div>
     </section>
 
     <section id="results" class="results hidden">
-      <div class="section-title"><div><p class="eyebrow">RECONCILIATION RESULTS</p><h2>2. 核對與轉檔結果</h2></div><button id="exportButton" class="primary-button">下載本次報表 ZIP</button></div>
+      <div class="section-title"><div><p class="eyebrow" data-i18n="resultsEyebrow">RECONCILIATION RESULTS</p><h2 data-i18n="resultsTitle">2. 核對與轉檔結果</h2></div><button id="exportButton" class="primary-button" data-i18n="downloadZip">下載本次報表 ZIP</button></div>
       <div id="reportStatuses" class="report-statuses"></div><div id="outputFiles" class="output-files"></div>
       <div id="metrics" class="metrics"></div>
-      <div class="tabs" role="tablist"><button class="tab active" data-tab="orders">工單關聯</button><button class="tab" data-tab="ups">UPS 獨立核對</button><button class="tab" data-tab="sf">SF Baozun 核對</button><button class="tab" data-tab="anomalies">異常清單</button><button class="tab" data-tab="manual">人工成品驗證</button></div>
-      <div class="filter-row"><input id="tableSearch" type="search" placeholder="搜尋工單、Tracking、SAP SD Document…" /><span id="tableCount" class="muted"></span></div>
+      <div class="tabs" role="tablist"><button class="tab active" data-tab="orders" data-i18n="tabOrders">工單關聯</button><button class="tab" data-tab="ups" data-i18n="tabUps">UPS 獨立核對</button><button class="tab" data-tab="sf" data-i18n="tabSf">SF Baozun 核對</button><button class="tab" data-tab="anomalies" data-i18n="tabExceptions">異常清單</button><button class="tab" data-tab="manual" data-i18n="tabManual">人工成品驗證</button></div>
+      <div class="filter-row"><input id="tableSearch" type="search" data-i18n-placeholder="search" placeholder="搜尋工單、Tracking、SAP SD Document…" /><span id="tableCount" class="muted"></span></div>
       <div class="table-wrap"><table><thead id="tableHead"></thead><tbody id="tableBody"></tbody></table></div>
-      <p class="footnote">轉檔輸出與核對結果皆由本機匯入資料即時計算。缺少必要來源時會標示「待來源」，不會推測補值。</p>
+      <p class="footnote" data-i18n="footnote">轉檔輸出與核對結果皆由本機匯入資料即時計算。缺少必要來源時會標示「待來源」，不會推測補值。</p>
     </section>
-    <footer>Internal test tool · NBY Digitalization · No connection to production systems</footer>
+    <footer data-i18n="footer">Internal test tool · NBY Digitalization · No connection to production systems</footer>
   </main>
 </body>
 </html>
