@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="description" content="NBY Shipping Data Converter — 11/20 source reconciliation test bench" />
+  <title>NBY Shipping Data Converter</title>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">N</span><div><strong>NBY Shipping Data Converter</strong><small>11/20 source reconciliation test bench</small></div></div>
+    <div class="top-actions"><button id="langToggle" class="language-button" type="button">EN</button><div class="privacy"><span class="privacy-dot"></span><span id="privacyText">檔案僅在此瀏覽器處理</span></div></div>
+  </header>
+  <main>
+    <section class="hero">
+      <div><p class="eyebrow">LOCAL TEST WORKSPACE · 2026.11.20</p><h1>出貨資料轉檔與逐筆核對</h1><p class="lede">匯入 Nike FC、SAP、UPS、SF Baozun 來源，再與人工成品逐筆比對。原始檔不會上傳到伺服器。</p></div>
+      <label class="date-control"><span id="dateLabel">核對日期</span><input id="asOfDate" type="date" value="2026-11-20" /></label>
+    </section>
+
+    <section class="upload-panel">
+      <div class="panel-head"><div><h2>1. 匯入來源與人工成品</h2><p>可一次選取多個 .xls、.xlsx、.csv 檔；系統依欄位辨識資料類型與工作表。</p></div><label class="primary-button" for="fileInput">選擇 Excel / CSV 檔</label><input id="fileInput" type="file" multiple accept=".xls,.xlsx,.xlsm,.csv" /></div>
+      <div id="dropZone" class="drop-zone"><span class="upload-icon">↑</span><div><strong>拖曳檔案到這裡</strong><span>支援多檔匯入；不會修改來源檔</span></div></div>
+      <div id="sourceList" class="source-list empty">尚未匯入檔案</div>
+      <div class="action-row"><button id="runButton" class="primary-button" disabled>執行轉檔與核對</button><button id="clearButton" class="secondary-button" disabled>清除本次資料</button><span id="runStatus" class="status-text"></span></div>
+    </section>
+
+    <section id="results" class="results hidden">
+      <div class="section-title"><div><p class="eyebrow">RECONCILIATION RESULTS</p><h2>2. 核對與轉檔結果</h2></div><button id="exportButton" class="primary-button">下載六份 Excel ZIP</button></div>
+      <div id="outputFiles" class="output-files"></div>
+      <div id="metrics" class="metrics"></div>
+      <div class="tabs" role="tablist"><button class="tab active" data-tab="orders">工單關聯</button><button class="tab" data-tab="ups">UPS 獨立核對</button><button class="tab" data-tab="sf">SF Baozun 核對</button><button class="tab" data-tab="anomalies">異常清單</button><button class="tab" data-tab="manual">人工成品驗證</button></div>
+      <div class="filter-row"><input id="tableSearch" type="search" placeholder="搜尋工單、Tracking、SAP SD Document…" /><span id="tableCount" class="muted"></span></div>
+      <div class="table-wrap"><table><thead id="tableHead"></thead><tbody id="tableBody"></tbody></table></div>
+      <p class="footnote">轉檔輸出與核對結果皆由本機匯入資料即時計算。缺少必要來源時會標示「待來源」，不會推測補值。</p>
+    </section>
+    <footer>Internal test tool · NBY Digitalization · No connection to production systems</footer>
+  </main>
+</body>
+</html>
