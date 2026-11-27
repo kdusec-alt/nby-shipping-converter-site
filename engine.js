@@ -18,12 +18,12 @@ function reconcile({fc,sap,stock,ups,sf,awb,date,cleanDate}){
   const rows=unique(raw),r=rows[0];if(raw.length>1)add('中','FC 工單重複',wo,`原始 ${raw.length} 列，不同內容 ${rows.length} 列；工單僅計一次，明細全部保留`);
   const ambiguous=rows.length>1;if(ambiguous)add('高','FC 工單明細粒度待確認',wo,'同工單有不同內容，SAP／物流關聯不採用任一列作為唯一答案');
   const sr=sapIndex.get(wo)||[],docs=[...new Set(sr.map(x=>key(val(x,'SD Document'))).filter(Boolean))];
-  const itemGroups=index(sr,x=>[val(x,'SD Document'),val(x,'Item (SD)','SD Item'),val(x,'Material')].map(key).join('|'));
+  const itemGroups=index(sr,x=>[val(x,'SD Document'),val(x,'Item (SD)','SD Item','Item'),val(x,'Material')].map(key).join('|'));
   const sapConflict=[...itemGroups.values()].some(v=>v.length>1);
   const sapDoc=!ambiguous&&docs.length===1&&!sapConflict?docs[0]:'';
   if(docs.length>1||sapConflict)add('高','SAP 關聯不唯一',wo,'不同 SAP 文件或同項次存在衝突，未選取第一筆');
   const stockRows=sapDoc?(stockIndex.get(sapDoc)||[]).filter(st=>sr.some(s=>
-    (!val(s,'Material')||key(val(st,'Material'))===key(val(s,'Material')))&&(!val(s,'Item (SD)','SD Item')||key(val(st,'Item (SD)','SD Item'))===key(val(s,'Item (SD)','SD Item'))))):[];
+    (!val(s,'Material')||key(val(st,'Material'))===key(val(s,'Material')))&&(!val(s,'Item (SD)','SD Item','Item')||key(val(st,'Item (SD)','SD Item','Item'))===key(val(s,'Item (SD)','SD Item','Item'))))):[];
   const tracks=[...new Set(rows.map(x=>key(val(x,'Tracking Number'))))];const track=tracks.length===1?tracks[0]:'';
   const shipper=val(r,'Shipper'),c=carrier(shipper);const ar=awbIndex.get(wo)||[],av=[...new Set(ar.map(x=>key(val(x,'ConsolidationShipmentId'))).filter(Boolean))];
   const awbValue=av.length===1?val(ar[0],'ConsolidationShipmentId'):'';if(av.length>1)add('高','AWB 對照衝突',wo,'同 OrderNumber 有多個 ConsolidationShipmentId');
@@ -56,6 +56,8 @@ function reconcile({fc,sap,stock,ups,sf,awb,date,cleanDate}){
   const groupMatch=!!o&&(!group||key(group)===key(val(o.source,'Ship Group Nbr')));
   const result=!o?'SF 工單未出現在 FC':many?'SF 多筆明細，數量粒度待確認':!groupMatch?'Ship Group 不一致':track!==o.track?'Tracking 不一致':refMatch===false?'FC Tracking 一致；SAP Confirmed Qty 僅供參考，MB52 數量待判讀':'FC Tracking 一致；數量未認證';
   if(!o||many||!groupMatch||track!==o?.track)add('中',result,wo,'SF 與 FC 比對；SAP Confirmed Qty 僅供參考。MB52 是庫存快照，差額不代表出貨差異');
+  if(refMatch===false)add('低','SF Qty 與 SAP Confirmed Qty 參考差異（待判讀）',wo,`SF Qty ${n}；SAP Confirmed Quantity ${sn}。此欄僅供參考，尚非核准數量規則`);
+  if(mb52Delta!==''&&mb52Delta!==0)add('低','MB52 庫存快照差額（待業務判讀）',wo,`SF Qty 減 MB52 Unrestricted = ${mb52Delta}；不代表日出貨量差異`);
   return {Work_Order_Number:wo,Ship_Group_ID:group,Tracking_Number:track,Mother_Waybill:val(r,'Mother waybill'),Estimated_Ship_Date:cleanDate(val(r,'Estimated Ship Date','Est Ship Date')),Qty:val(r,'Qty','Quantity'),SAP_SD_Document:o?.sapDoc||'',SAP_Confirmed_Qty_Reference:o?.confirmedQty??'',Qty_vs_SAP_Reference:refMatch===null?'待確認':refMatch?'相同':'不同',Qty與SAP一致:refMatch===null?'待確認':refMatch?'參考相同':'參考不同',MB52_Unrestricted_Reference:unrestricted??'',MB52_Blocked_Stock_Reference:blocked??'',SF_Qty_minus_MB52_Unrestricted_Reference:mb52Delta,MB52_Interpretation:'庫存快照，不等同當日出貨量；差額未認證',SAP_工單存在:!!o?.sapMatch,MB52_紀錄存在:!!o?.stockMatch,FC_工單存在:!!o,FC_Tracking一致:!!o&&track===o.track,數量核對:'待確認 SF Qty 單位及 MB52 業務規則',結果:result};
  });
  return {orders,upsRows,sfRows,anomalies};
