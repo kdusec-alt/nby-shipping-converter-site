@@ -78,7 +78,18 @@ async function fill(bytes,plans,type,summary){
   const ri=g.findIndex((r,i)=>i>hi&&root.NBYCleanDate(r[dc])===summary.date);if(ri<0)throw Error('Summary 尚無所選日期，請在樣板新增日期列');
   const rr=list(sd,'row').find(r=>Number(r.getAttribute('r'))===ri+1),address=XLSX.utils.encode_cell({r:ri,c:ac});
   if(ss[address]?.f)throw Error('Actually Shipment 是公式，需先確認來源規則');
-  setCell(sd,rr,address,summary.actual);zip.file(target.path,text(sd));
+  setCell(sd,rr,address,summary.actual);
+  if(summary.expectDate&&summary.expect!=null){
+   const ec=g[hi].findIndex(v=>NBYEngine.key(v)==='EXPECT SHIPMENT');
+   const er=g.findIndex((r,i)=>i>hi&&root.NBYCleanDate(r[dc])===summary.expectDate);
+   if(ec<0||er<0)throw Error('Summary 缺少預計出貨日期或欄位：'+summary.expectDate);
+   const ea=XLSX.utils.encode_cell({r:er,c:ec});
+   if(ss[ea]?.f)throw Error('Expect Shipment 是公式，需確認樣板');
+   const erow=list(sd,'row').find(r=>Number(r.getAttribute('r'))===er+1);
+   if(!erow)throw Error('Summary 缺少預計出貨日期列');
+   setCell(sd,erow,ea,summary.expect);
+  }
+  zip.file(target.path,text(sd));
   const dd=parse(await zip.file(detail.path).async('string')),ds=wb.Sheets[detail.name],dg=XLSX.utils.sheet_to_json(ds,{header:1,raw:false,defval:''});
   const dh=dg.findIndex(r=>r.some(v=>NBYEngine.key(v)==='PRODUCT NAME'));if(dh<0)throw Error('Detail shipment 欄位未辨識');
   const pc=dg[dh].findIndex(v=>NBYEngine.key(v)==='PRODUCT NAME'),dateCol=dg[dh].findIndex(v=>root.NBYCleanDate(v)===summary.date);if(dateCol<0)throw Error('Detail shipment 尚無所選日期欄');
