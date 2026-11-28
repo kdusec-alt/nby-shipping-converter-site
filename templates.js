@@ -76,30 +76,37 @@ async function fill(bytes,plans,type,summary){
   const hi=g.findIndex(r=>r.some(v=>NBYEngine.key(v)==='ACTUALLY SHIPMENT'));if(hi<0)throw Error('Summary 欄位未辨識');
   const dc=g[hi].findIndex(v=>NBYEngine.key(v)==='DATE'),ac=g[hi].findIndex(v=>NBYEngine.key(v)==='ACTUALLY SHIPMENT');
   const excelDate=cell=>{if(!cell)return '';if(cell.t==='n'&&cell.z&&XLSX.SSF.is_date(cell.z)){const d=XLSX.SSF.parse_date_code(cell.v,{date1904:!!wb.Workbook?.WBProps?.date1904});return d?String(d.y).padStart(4,'0')+'-'+String(d.m).padStart(2,'0')+'-'+String(d.d).padStart(2,'0'):'';}return root.NBYCleanDate(cell.w||cell.v);};
-  const ri=g.findIndex((r,i)=>i>hi&&excelDate(ss[XLSX.utils.encode_cell({r:i,c:dc})])===summary.date);if(ri<0)throw Error('Summary 尚無所選日期，請在樣板新增日期列');
-  const rr=list(sd,'row').find(r=>Number(r.getAttribute('r'))===ri+1),address=XLSX.utils.encode_cell({r:ri,c:ac});
-  if(ss[address]?.f)throw Error('Actually Shipment 是公式，需先確認來源規則');
-  setCell(sd,rr,address,summary.actual);
-  if(summary.expectDate&&summary.expect!=null){
-   const ec=g[hi].findIndex(v=>NBYEngine.key(v)==='EXPECT SHIPMENT');
-   const er=g.findIndex((r,i)=>i>hi&&excelDate(ss[XLSX.utils.encode_cell({r:i,c:dc})])===summary.expectDate);
-   if(ec<0||er<0)throw Error('Summary 缺少預計出貨日期或欄位：'+summary.expectDate);
-   const ea=XLSX.utils.encode_cell({r:er,c:ec});
-   if(ss[ea]?.f)throw Error('Expect Shipment 是公式，需確認樣板');
-   const erow=list(sd,'row').find(r=>Number(r.getAttribute('r'))===er+1);
-   if(!erow)throw Error('Summary 缺少預計出貨日期列');
-   setCell(sd,erow,ea,summary.expect);
+  const ri=g.findIndex((r,i)=>i>hi&&excelDate(ss[XLSX.utils.encode_cell({r:i,c:dc})])===summary.date);
+  if(ri<0)throw Error('Summary 缺少 Manifest 日期：'+summary.date);
+  const ec=g[hi].findIndex(v=>NBYEngine.key(v)==='EXPECT SHIPMENT');
+  if(ec<0)throw Error('Summary 缺少 Expect Shipment 欄位');
+  const ea=XLSX.utils.encode_cell({r:ri,c:ec}), existing=ss[ea];
+  if(summary.verifiedPairs!=null){
+   if(existing?.f)throw Error('Expect Shipment 為公式，需確認樣板');
+   if(existing&&existing.v!==''&&existing.v!=null&&Number(existing.v)!==summary.verifiedPairs)
+    throw Error('Expect Shipment 與樣板歷史數值不同，請確認日期規則：'+summary.date);
+   const row=list(sd,'row').find(r=>Number(r.getAttribute('r'))===ri+1);
+   if(!row)throw Error('Summary 缺少日期列');
+   setCell(sd,row,ea,summary.verifiedPairs);
   }
   zip.file(target.path,text(sd));
   const dd=parse(await zip.file(detail.path).async('string')),ds=wb.Sheets[detail.name],dg=XLSX.utils.sheet_to_json(ds,{header:1,raw:false,defval:''});
-  const dh=dg.findIndex(r=>r.some(v=>NBYEngine.key(v)==='PRODUCT NAME'));if(dh<0)throw Error('Detail shipment 欄位未辨識');
-  const pc=dg[dh].findIndex(v=>NBYEngine.key(v)==='PRODUCT NAME'),dateCol=dg[dh].findIndex(v=>root.NBYCleanDate(v)===summary.date);if(dateCol<0)throw Error('Detail shipment 尚無所選日期欄');
-  const products=new Map(summary.products.map(x=>[NBYEngine.key(x.product),x.count]));
-  for(let i=dh+1;i<dg.length;i++){const product=NBYEngine.key(dg[i][pc]);if(!product||/TOTAL|合計/.test(product))continue;
-   const address=XLSX.utils.encode_cell({r:i,c:dateCol});if(ds[address]?.f)continue;
-   const row=list(dd,'row').find(r=>Number(r.getAttribute('r'))===i+1);if(row)setCell(dd,row,address,products.get(product)||0);products.delete(product);
+  const blocks=[];
+  for(let i=0;i<dg.length;i++){
+   const productColumn=dg[i].findIndex(v=>NBYEngine.key(v)==='PRODUCT NAME');if(productColumn<0)continue;
+   const dateColumn=dg[i].findIndex((v,c)=>excelDate(ds[XLSX.utils.encode_cell({r:i,c})])===summary.date);
+   if(dateColumn>=0)blocks.push({header:i,productColumn,dateColumn});
   }
-  if(products.size)throw Error('Detail shipment 缺少型體：'+[...products.keys()].join(', '));zip.file(detail.path,text(dd));count=2;
+  if(blocks.length!==1)throw Error('Detail shipment 日期區塊不唯一或不存在：'+summary.date);
+  const block=blocks[0], total=dg.findIndex((row,i)=>i>block.header&&NBYEngine.key(row[block.productColumn])==='TOTAL');
+  if(total<0)throw Error('Detail shipment 區塊缺少 TOTAL');
+  const canonical=v=>{let n=NBYEngine.key(v).replace(/^(SP|SU|FA|HO)\d{2}[ -]+/,'').replace(/\s+/g,' ').trim();if(n==='JORDAN TATUM 5 JBY')n='TATUM 5 NBY';return n;};
+  for(const product of summary.products){
+   const rows=[];for(let i=block.header+1;i<total;i++)if(canonical(dg[i][block.productColumn])===canonical(product.product))rows.push(i);
+   if(rows.length!==1)throw Error('型體對應不存在或不唯一：'+product.product);
+  }
+  // Actual handover timing has not been certified. Preserve every detail cell and formula.
+  count=2;
  }
  if(!count||type!=='status'&&!matched.has('fc'))throw Error('找不到可用的 Work Order 樣板工作表');
  if(type==='data'&&plans.some(p=>!matched.has(p.kind)))throw Error('Data Shipping 樣板缺少 FC／SAP／MB52／AWB 工作表');
