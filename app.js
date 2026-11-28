@@ -182,19 +182,18 @@
     const sourceDecisions={};const source=k=>{const ss=validSourceSheets(k),books=[...new Set(ss.map(s=>s.file))];let chosen=books.length===1?books[0]:state.sourceOverrides[k]||recommendedSourceBook(k,ss);if(books.length>1&&!chosen)throw Error(t('chooseSourceBook',{kind:k}));if(chosen)sourceDecisions[k]={selected:chosen,ignored:books.filter(file=>file!==chosen)};return NBYEngine.unique(ss.filter(s=>!chosen||s.file===chosen).flatMap(s=>s.rows));};
     const sap=source('SAP ZRSD1019'), mb52Raw=source('SAP MB52'), ups=source('UPS'), sf=source('SF Baozun').filter(r=>!(norm(value(r,'Factory'))==='TOTAL'&&!value(r,'Work Order Number')&&!value(r,'Tracking Number')));
     const mb52=NBYEngine.unique(mb52Raw);
-    const selected=fcCandidates.find(x=>`${x.file}::${x.sheet}`===$('fcSource').value);
-    if(!selected)throw Error(t('fcMissing'));
-    const selectedFile=state.files.find(f=>f.name===selected.file),selectedValidation=selectedFile?.validation?.find(v=>v.sheet===selected.sheet);if(selectedFile?.error||selectedValidation?.valid===false)throw Error(`${t('fcRequired')}: ${(selectedValidation?.missing||[]).join(', ')||selectedFile?.error||t('revalidate')}`);
-    const reportDates={orders:$('ordersDate').value||target,data:$('dataDate').value||target,statusStart:$('statusStart').value||target,statusEnd:$('statusEnd').value||$('statusStart').value||target};
-    for(const [name,date] of Object.entries(reportDates))if(!/^\d{4}-\d{2}-\d{2}$/.test(date))throw Error(`${t('invalidDate')} ${t(({orders:'ordersDate',data:'dataDate',statusStart:'statusStart',statusEnd:'statusEnd'})[name])}`);
-    if(reportDates.statusStart>reportDates.statusEnd)throw Error(t('statusDateOrder'));
+    const rawFcSheets=validSourceSheets('Nike FC').filter(s=>!s.processed);
+    if(!rawFcSheets.length)throw Error(t('fcMissing'));
+    const previousDay=new Date(target+'T00:00:00Z');previousDay.setUTCDate(previousDay.getUTCDate()-1);
+    const reportDates={orders:previousDay.toISOString().slice(0,10),data:target,statusStart:'0001-01-01',statusEnd:target};
     const dateOf=row=>cleanDate(value(row,'Manifest Scan Date'));
-    const selectedOrders=selected.rows.filter(row=>dateOf(row)===reportDates.orders);
-    const selectedData=selected.rows.filter(row=>dateOf(row)===reportDates.data);
-    const selectedStatus=selected.rows.filter(row=>dateOf(row)>=reportDates.statusStart&&dateOf(row)<=reportDates.statusEnd);
-    const requestedDates=new Set([target,reportDates.orders,reportDates.data,...selectedStatus.map(dateOf)].filter(Boolean));
-    const fcRows=selected.rows.filter(row=>requestedDates.has(dateOf(row)));
-    if(!fcRows.length)throw Error(t('noFcRows'));
+    const rawRows=NBYEngine.unique(rawFcSheets.flatMap(s=>s.rows));
+    const selectedOrders=rawRows.filter(row=>dateOf(row)===reportDates.orders);
+    if(!selectedOrders.length)throw Error(t('missingPreviousFc',{date:reportDates.orders}));
+    const selectedData=rawRows.filter(row=>dateOf(row)===reportDates.data);
+    const selectedStatus=rawRows.filter(row=>dateOf(row)&&dateOf(row)<=target);
+    const fcRows=NBYEngine.unique([...selectedOrders,...selectedData,...selectedStatus]);
+    const selected={file:[...new Set(rawFcSheets.map(s=>s.file))].join(', '),sheet:'Multiple raw FC worksheets',rows:fcRows,processed:false};
     const selectedFc={s:selected,rows:fcRows,ordersRows:selectedOrders,dataRows:selectedData,statusRows:selectedStatus};
     const manualSheets=state.sheets.filter(s=>s.kind==='人工成品');
     const {orders,upsRows,sfRows,anomalies}=NBYEngine.reconcile({fc:fcRows,sap,stock:mb52,ups,sf,awb:source('AWB Map'),date:target,cleanDate});
@@ -393,6 +392,9 @@
     if(!window.JSZip){status('zipUnavailable');return;}
     try{const zip=new JSZip();for(const [name,bytes] of Object.entries(files))zip.file(name,bytes);zip.file('Processing Audit.json',JSON.stringify(state.result.audit,null,2));const blob=await zip.generateAsync({type:'blob'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`NBY_Shipping_Outputs_${state.result.target}.zip`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1500);}catch(e){console.error(e);status('zipUnavailable');}
   }
+  Object.assign(i18n.zh,{dateLabel:'Report Date（報表日期）',missingPreviousFc:'缺少 {date} 的 Nike FC 原始資料；Orders Update 必須使用 Report Date 前一天的 Manifest Scan Date。請批次補入該日期原始檔。',fcSourceLabel:'已匯入 FC 日期來源（系統自動分配）'});
+  Object.assign(i18n.en,{dateLabel:'Report Date',missingPreviousFc:'Missing raw Nike FC data for {date}. Orders Update requires the previous day’s Manifest Scan Date. Import the raw file for that date.',fcSourceLabel:'Imported FC sources (automatically assigned)'});
+  Object.assign(i18n.vi,{dateLabel:'Ngày báo cáo (Report Date)',missingPreviousFc:'Thiếu dữ liệu Nike FC gốc ngày {date}. Orders Update sử dụng Manifest Scan Date của ngày trước ngày báo cáo. Vui lòng tải thêm tệp gốc của ngày đó.',fcSourceLabel:'Nguồn FC đã tải (tự động phân bổ)'});
   function applyLanguage(next){
     language=next;document.documentElement.lang=language==='zh'?'zh-Hant':language==='vi'?'vi':'en';
     document.querySelectorAll('[data-i18n]').forEach(el=>{el.textContent=t(el.dataset.i18n);});
@@ -400,6 +402,7 @@
     const nextLang=languageOrder[(languageOrder.indexOf(language)+1)%languageOrder.length];
     $('langToggle').textContent=nextLang==='zh'?'繁中':nextLang.toUpperCase();$('langToggle').setAttribute('aria-label',t('switchLanguage'));
     renderSources();renderSourceChoices();renderSourceOverrides();
+    $('fcSource').disabled=true;const advanced=$('ordersDate').closest('details');if(advanced)advanced.hidden=true;
     if(state.result){renderResults();renderReportStatuses();renderOutputFiles();}
     if(state.statusMessage)status(state.statusMessage.key,state.statusMessage.params||{});
   }
