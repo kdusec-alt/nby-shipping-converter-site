@@ -8,9 +8,9 @@
   <link rel="stylesheet" href="styles.css?v=2.8" />
   <script src="vendor/xlsx.full.min.js"></script>
   <script src="vendor/jszip.min.js"></script>
-  <script defer src="engine.js?v=shipping-2.1.12-beta1"></script>
-  <script defer src="templates.js?v=shipping-2.1.12-beta1"></script>
-  <script defer src="app.js?v=shipping-2.1.12-beta1"></script>
+  <script defer src="engine.js?v=shipping-2.1.13-beta1"></script>
+  <script defer src="templates.js?v=shipping-2.1.13-beta1"></script>
+  <script defer src="app.js?v=shipping-2.1.13-beta1"></script>
 </head>
 <body>
   <header class="topbar">
@@ -22,6 +22,7 @@
       <div><p class="eyebrow" data-i18n="eyebrow">DAILY SHIPPING WORKSPACE</p><h1 data-i18n="heroTitle">出貨資料轉檔與逐筆核對</h1><p class="lede" data-i18n="lede">匯入 Nike FC、SAP、UPS、SF Baozun 來源，再與人工成品逐筆比對。原始檔不會上傳到伺服器。</p></div>
       <label class="date-control"><span id="dateLabel" data-i18n="dateLabel">本次出貨基準日</span><input id="asOfDate" type="date" value="" /></label>
     </section>
+    <label><input id="batchConfirm" type="checkbox"><span data-i18n="batchConfirm">我確認缺少 Manifest 日期的工單屬於所選批次</span></label>
 
     <section class="upload-panel">
       <div class="panel-head"><div><h2 data-i18n="uploadTitle">1. 匯入來源檔</h2><p data-i18n="uploadHint">五類來源分開上傳與驗欄；可多選檔案，但不同日期或重複批次不會自動合併。</p></div></div>
