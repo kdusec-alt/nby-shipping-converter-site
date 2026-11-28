@@ -189,7 +189,6 @@
     const dateOf=row=>cleanDate(value(row,'Manifest Scan Date'));
     const rawRows=NBYEngine.unique(rawFcSheets.flatMap(s=>s.rows));
     const selectedOrders=rawRows.filter(row=>dateOf(row)===reportDates.orders);
-    if(!selectedOrders.length)throw Error(t('missingPreviousFc',{date:reportDates.orders}));
     const selectedData=rawRows.filter(row=>dateOf(row)===reportDates.data);
     const selectedStatus=rawRows.filter(row=>dateOf(row)&&dateOf(row)<=target);
     const fcRows=NBYEngine.unique([...selectedOrders,...selectedData,...selectedStatus]);
@@ -198,8 +197,9 @@
     const manualSheets=state.sheets.filter(s=>s.kind==='人工成品');
     const {orders,upsRows,sfRows,anomalies}=NBYEngine.reconcile({fc:fcRows,sap,stock:mb52,ups,sf,awb:source('AWB Map'),date:target,cleanDate});
     const add=(severity,category,key,detail)=>anomalies.push({嚴重度:severity,異常類型:category,工單或Tracking:key,說明:detail});
+    if(!selectedOrders.length)add('中','Orders Update — Missing Required Source',reportDates.orders,t('missingPreviousFc',{date:reportDates.orders}));
     for(const [kind,decision] of Object.entries(sourceDecisions))if(decision.ignored.length)add('中','同類來源多檔已選定單一活頁簿',kind,`已選用 ${decision.selected}；未納入本次核對：${decision.ignored.join(', ')}。其他檔案仍保留於本次匯入與處理紀錄。`);
-    selectedFc.linked=orders.filter(o=>o.sapMatch).length;selectedFc.rate=selectedFc.linked/orders.length;
+    selectedFc.linked=orders.filter(o=>o.sapMatch).length;selectedFc.rate=orders.length?selectedFc.linked/orders.length:0;
 
     for(const f of state.files)if(f.error||!f.sheetCount)add('高','來源檔讀取失敗或未辨識',f.name,f.error||'沒有可辨識資料表');else if(f.validation?.some(v=>!v.valid))add('高','來源缺少必要欄位',f.name,f.validation.filter(v=>!v.valid).map(v=>`${v.sheet}: ${v.missing.join(', ')}`).join('；'));
     for(const kind of ['SAP ZRSD1019','SAP MB52','UPS','SF Baozun'])if(!all(kind).length)add('中','來源未提供或未通過欄位驗證',kind,'相關報表狀態會標示缺少必要來源；不以空白欄位冒充匹配');
