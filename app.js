@@ -1,5 +1,5 @@
 (() => {
-  const state = { files: [], sheets: [], result: null, activeTab: 'orders', templates: {}, busy: false, replacingKind: '', statusMessage: null, sourceOverrides: {} };
+  const state = { files: [], sheets: [], result: null, activeTab: 'orders', templates: {}, busy: false, replacingKind: '', statusMessage: null, sourceOverrides: {}, templateErrors: {} };
   const $ = id => document.getElementById(id);
   let language='zh';
   const i18n={
@@ -110,8 +110,8 @@
           const prompts={zh:'已辨識 {name}。是否儲存 XLSX 作為此瀏覽器的固定樣板？',en:'Detected {name}. Save this XLSX as a template in this browser?',vi:'Đã nhận diện {name}. Lưu XLSX làm mẫu trong trình duyệt này?'};
           if(!/\.xlsx$/i.test(file.name))status('xlsxTemplateRequired');
           else if(window.confirm(prompts[language].replace('{name}',names[reportType]))){
-            try{const template={bytes:new Uint8Array(await file.arrayBuffer()),name:file.name};saveTemplate(reportType,template);state.templates[reportType]=template;renderTemplateNames();}
-            catch(error){console.warn(error);status('templateSaveFailed');}
+            try{const template={bytes:new Uint8Array(await file.arrayBuffer()),name:file.name};state.templates[reportType]=await saveTemplate(reportType,template);delete state.templateErrors[reportType];renderTemplateNames();}
+            catch(error){console.warn(error);state.templateErrors[reportType]=error.message;renderTemplateNames();alert(t('templateSaveFailed')+' '+error.message);}
           }
         } }
       catch(e) { state.files.push({name:file.name,size:file.size,importedAt:new Date().toISOString(),expectedKind,types:['讀取失敗'],sheetCount:0,error:e.message,sourceFile:file}); }
@@ -188,6 +188,7 @@
   $('sourceList').addEventListener('click',e=>{const re=e.target.closest('[data-revalidate]');if(re&&!state.busy){const f=state.files[Number(re.dataset.revalidate)],rows=state.sheets.filter(s=>s.file===f.name);if(!rows.length&&f.sourceFile){ingest([f.sourceFile],f.expectedKind||'');return;}f.validation=validateFileRows(rows);f.error=rows.length?'':'沒有可重新驗證的資料表';renderSources();renderSourceChoices();renderSourceOverrides();return;}const b=e.target.closest('[data-remove]');if(!b||state.busy)return;const f=state.files[Number(b.dataset.remove)];state.files.splice(Number(b.dataset.remove),1);state.sheets=state.sheets.filter(s=>s.file!==f.name);invalidate();renderSources();renderSourceChoices();renderSourceOverrides();$('runButton').disabled=!state.sheets.length;});
   function escapeHtml(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
   async function calculate() {
+    await templatesReady;
     const target=dateForInput();
     if(!/^\d{4}-\d{2}-\d{2}$/.test(target))throw Error(t('validDate'));
     const all=k=>state.sheets.filter(s=>s.kind===k&&state.files.find(f=>f.name===s.file)?.validation?.find(v=>v.sheet===s.sheet)?.valid!==false).flatMap(s=>s.rows);
@@ -395,8 +396,8 @@
     ]){
       const template=state.templates[type];
       if(!files[name]){r.templateStatus.push(name+'：缺少必要來源或沒有符合資料列');continue;}
-      if(template){try{if(type==='status'){let bytes=template.bytes;for(const date of computedDates){const verifiedPairs=pairCount(totalDateOrders.get(date),date);const products=[...productDateOrders.values()].filter(x=>x.date===date).map(x=>({product:x.product,count:x.workOrders.size}));bytes=await NBYTemplates.fill(bytes,plans,type,{date,actual:totalDateOrders.get(date).size,products,expectDate:verifiedPairs===null?null:addDay(date),expect:verifiedPairs});}if(!computedDates.length)throw Error('所選期間沒有 FC 出貨列可更新');files[name]=bytes;const updated={...template,bytes:new Uint8Array(bytes)};try{saveTemplate(type,updated);state.templates[type]=updated;}catch(error){console.warn('Shipping history could not be saved',error);r.templateStatus.push(name+'：未能儲存歷史至瀏覽器');}}else files[name]=await NBYTemplates.fill(template.bytes,plans,type,{});r.templateStatus.push(name+'：原樣板格式');}catch(e){delete files[name];r.templateStatus.push(name+'：未輸出，'+e.message);}}
-      else {const draft='DRAFT '+name;files[draft]=files[name];delete files[name];r.templateStatus.push(name+'：未載入樣板，僅提供 DRAFT 資料版');}
+      if(template){try{if(type==='status'){let bytes=template.bytes;for(const date of computedDates){const verifiedPairs=pairCount(totalDateOrders.get(date),date);const products=[...productDateOrders.values()].filter(x=>x.date===date).map(x=>({product:x.product,count:x.workOrders.size}));bytes=await NBYTemplates.fill(bytes,plans,type,{date,actual:totalDateOrders.get(date).size,products,expectDate:verifiedPairs===null?null:addDay(date),expect:verifiedPairs});}if(!computedDates.length)throw Error('所選期間沒有 FC 出貨列可更新');files[name]=bytes;const updated={...template,bytes:new Uint8Array(bytes)};try{state.templates[type]=await saveTemplate(type,updated);}catch(error){console.warn('Shipping history could not be saved',error);r.templateStatus.push(name+'：未能儲存歷史至瀏覽器 '+error.message);}}else files[name]=await NBYTemplates.fill(template.bytes,plans,type,{});r.templateStatus.push(name+'：原樣板格式');}catch(e){delete files[name];r.templateStatus.push(name+'：未輸出，'+e.message);}}
+      else {delete files[name];r.templateStatus.push(name+'：未載入樣板，無法產出正式報表'+(state.templateErrors[type]?'；'+state.templateErrors[type]:''));}
     }
     const reportState=(name,ready)=>{const official=!!files[name],draft=!!files['DRAFT '+name];return !ready?'Missing Required Source':official?'Generated – Pending Validation':draft?'Generated – Draft Pending Validation':'Failed'};
     r.reportStatus=[
@@ -413,7 +414,7 @@
     testSummary.push({Check:'Output validation',Rule:'Generated workbook and source readiness still require manual row-by-row review',Actual:Object.keys(files).join(', '),Status:'PENDING MANUAL VALIDATION',Source:'Generated file list'});
     make(outputNames[5],[['Exceptions',exceptions],['SF Quantity References',englishRows(r.sfRows)],['UPS Quantity Status',englishRows(r.upsRows)],['Shipping Status Diagnostics',englishRows(statusSummary)],['Test Result',testSummary],['Template Status',r.templateStatus.map(Status=>({Status}))],['Processing Log',state.files.map(f=>({File:f.name,Bytes:f.size,ImportedAt:f.importedAt,Types:f.types.join(', '),Error:f.error||'',Validation:JSON.stringify(f.validation||[]),ReportDates:JSON.stringify(r.reportDates)}))],['Golden Sample Differences',goldenDifferences],['Golden Sample Summary',englishRows(r.manual.summaries.map(({details,...x})=>x))]]);
     await buildReady;
-    const audit={build:{...window.NBYBuild},version:'2.1.6 Beta',sapPaaByDate:Object.fromEntries(computedDates.map(date=>[date,pairCount(totalDateOrders.get(date),date)])),processedAt:new Date().toISOString(),manifestDate:r.target,reportDates:r.reportDates,sourceSelections:r.sourceDecisions,source:state.files.map(f=>({name:f.name,size:f.size,importedAt:f.importedAt,types:f.types,validation:f.validation||[],error:f.error||''})),selectedFc:{file:r.selectedFc.file,sheet:r.selectedFc.sheet},counts:r.counts,exceptions:r.anomalies.length,templates:r.templateStatus,reportStatus:r.reportStatus,expectShipment:'PREVIOUS_MANIFEST_PAA_VERIFIED',goldenSample:'NOT CERTIFIED'};
+    const audit={build:{...window.NBYBuild},version:'2.1.7 Beta',sapPaaByDate:Object.fromEntries(computedDates.map(date=>[date,pairCount(totalDateOrders.get(date),date)])),processedAt:new Date().toISOString(),manifestDate:r.target,reportDates:r.reportDates,sourceSelections:r.sourceDecisions,source:state.files.map(f=>({name:f.name,size:f.size,importedAt:f.importedAt,types:f.types,validation:f.validation||[],error:f.error||''})),selectedFc:{file:r.selectedFc.file,sheet:r.selectedFc.sheet},counts:r.counts,exceptions:r.anomalies.length,templates:r.templateStatus,templateDetails:Object.fromEntries(['orders','data','status'].map(type=>{const t=state.templates[type];return [type,{file:t?.name||null,size:t?.bytes?.byteLength||0,storage:t?.storage||'missing',read:t?.read||'missing',worksheets:t?.sheets||[],applied:r.templateStatus.find(x=>x.startsWith(({orders:'Orders Update.xlsx',data:'Data Shipping.xlsx',status:'Shipping Status.xlsx'})[type]))||'',error:state.templateErrors[type]||null}]})),reportStatus:r.reportStatus,expectShipment:'PREVIOUS_MANIFEST_PAA_VERIFIED',goldenSample:'NOT CERTIFIED'};
     r.audit=audit;try{const history=JSON.parse(localStorage.getItem('nby-audit')||'[]');history.unshift(audit);localStorage.setItem('nby-audit',JSON.stringify(history.slice(0,30)));}catch(e){};
     r.outputFiles=files;r.outputTestSummary=testSummary;renderReportStatuses();renderOutputFiles();return files;
   }
@@ -422,7 +423,7 @@
     const root=$('reportStatuses');if(!root)return;
     const nameKeys={'Orders Update':'reportOrders','Data Shipping':'reportData','Shipping Status':'reportStatus','UPS Reconciliation':'reportUps','SF Baozun Reconciliation':'reportSf','Exception Report':'reportException','Golden Sample Difference Report':'reportGoldenDiff','Golden Sample Certification':'reportGoldenCert'};
     const stateKeys={'Missing Required Source':'reportMissing','Generated – Pending Validation':'reportGenerated','Generated – Draft Pending Validation':'reportDraft','Failed':'reportFailed','Generated – Pending Review':'reportReview','Pending – Independent Raw Source Required':'reportGolden'};
-    root.innerHTML=(state.result.reportStatus||[]).map(x=>`<div class="report-status"><strong>${escapeHtml(t(nameKeys[x.name]||x.name))}</strong><span>${escapeHtml(t(stateKeys[x.state]||x.state))}</span></div>`).join('');
+    root.innerHTML=(state.result.templateStatus||[]).map(message=>`<div class="report-status"><span>${escapeHtml(message)}</span></div>`).join('')+(state.result.reportStatus||[]).map(x=>`<div class="report-status"><strong>${escapeHtml(t(nameKeys[x.name]||x.name))}</strong><span>${escapeHtml(t(stateKeys[x.state]||x.state))}</span></div>`).join('');
   }
   function renderOutputFiles(){
     const root=$('outputFiles');if(!root)return;
@@ -434,10 +435,10 @@
     if(!window.JSZip){status('zipUnavailable');return;}
     try{const zip=new JSZip();for(const [name,bytes] of Object.entries(files))zip.file(name,bytes);zip.file('Processing Audit.json',JSON.stringify(state.result.audit,null,2));const blob=await zip.generateAsync({type:'blob'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`NBY_Shipping_Outputs_${state.result.target}.zip`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1500);}catch(e){console.error(e);status('zipUnavailable');}
   }
-  Object.assign(i18n.zh,{xlsxTemplateRequired:'已辨識人工成品。請在 Excel 另存為 XLSX，再匯入以設定樣板。',templateSaveFailed:'樣板無法儲存，請檢查瀏覽器儲存空間。',dateLabel:'Report Date（報表日期）',missingPreviousFc:'缺少 {date} 的 Nike FC 原始資料；Orders Update 必須使用 Report Date 前一天的 Manifest Scan Date。請批次補入該日期原始檔。',fcSourceLabel:'已匯入 FC 日期來源（系統自動分配）'});
+  Object.assign(i18n.zh,{xlsxTemplateRequired:'已辨識人工成品。請在 Excel 另存為 XLSX，再匯入以設定樣板。',templateSaveFailed:'樣板無法儲存，請檢查瀏覽器儲存空間。',dateLabel:'Report Date（報表日期）',missingPreviousFc:'Nike FC 下載範圍未涵蓋 {date} 的 Manifest 資料，請下載包含該日期資料的 FC 原始檔。',fcSourceLabel:'已匯入 FC 日期來源（系統自動分配）'});
   Object.assign(i18n.en,{xlsxTemplateRequired:'Manual report detected. Save it as XLSX in Excel and import it to set the template.',templateSaveFailed:'Could not save template. Check browser storage.',dateLabel:'Report Date',missingPreviousFc:'Missing raw Nike FC data for {date}. Orders Update requires the previous day’s Manifest Scan Date. Import the raw file for that date.',fcSourceLabel:'Imported FC sources (automatically assigned)'});
   Object.assign(i18n.vi,{xlsxTemplateRequired:'Đã nhận diện báo cáo thủ công. Lưu thành XLSX trong Excel rồi tải lên để thiết lập mẫu.',templateSaveFailed:'Không thể lưu mẫu. Vui lòng kiểm tra dung lượng trình duyệt.',dateLabel:'Ngày báo cáo (Report Date)',missingPreviousFc:'Thiếu dữ liệu Nike FC gốc ngày {date}. Orders Update sử dụng Manifest Scan Date của ngày trước ngày báo cáo. Vui lòng tải thêm tệp gốc của ngày đó.',fcSourceLabel:'Nguồn FC đã tải (tự động phân bổ)'});
-  window.NBYBuild={version:'2.1.6 Beta',buildId:'shipping-2.1.6-beta1',gitCommitSha:null,deployedAt:null};
+  window.NBYBuild={version:'2.1.7 Beta',buildId:'shipping-2.1.7-beta1',gitCommitSha:null,deployedAt:null};
   const buildLabel=document.getElementById('buildInfo');
   function showBuild(){
     if(!buildLabel)return;
@@ -449,18 +450,38 @@
     if(info?.buildId===window.NBYBuild.buildId){Object.assign(window.NBYBuild,info);showBuild();}
   }).catch(()=>{}):Promise.resolve();
   const templateKey=type=>'nby-template-v1-'+type;
-  function saveTemplate(type, template) {
-    let binary='';
-    for(let offset=0;offset<template.bytes.length;offset+=16384)
-      binary+=String.fromCharCode(...template.bytes.subarray(offset,offset+16384));
-    localStorage.setItem(templateKey(type),JSON.stringify({name:template.name,bytes:btoa(binary)}));
+  const templateDb=new Promise((resolve,reject)=>{
+    const request=indexedDB.open('nby-shipping-templates',1);
+    request.onupgradeneeded=()=>request.result.createObjectStore('templates');
+    request.onsuccess=()=>resolve(request.result);
+    request.onerror=()=>reject(request.error);
+  });
+  async function readTemplate(type){
+    const db=await templateDb;
+    return new Promise((resolve,reject)=>{const req=db.transaction('templates','readonly').objectStore('templates').get(type);req.onsuccess=()=>resolve(req.result||null);req.onerror=()=>reject(req.error);});
   }
-  function restoreTemplates() {
-    for(const type of ['orders','data','status']) {
-      try {
-        const saved=JSON.parse(localStorage.getItem(templateKey(type))||'null');
-        if(saved)state.templates[type]={name:saved.name,bytes:Uint8Array.from(atob(saved.bytes),x=>x.charCodeAt(0))};
-      } catch(error) { console.warn('Template could not be restored',type,error); }
+  function checkTemplate(type,template){
+    const wb=XLSX.read(template.bytes,{type:'array',cellStyles:true});
+    if(type==='data' && wb.SheetNames.length!==5)throw Error('Data Shipping template requires five worksheets');
+    if(type==='status' && !['summary','detail shipment'].every(n=>wb.SheetNames.some(x=>x.toLowerCase()===n)))throw Error('Shipping Status template requires Summary and Detail shipment');
+    return wb.SheetNames;
+  }
+  async function saveTemplate(type,template){
+    const sheets=checkTemplate(type,template),db=await templateDb;
+    await new Promise((resolve,reject)=>{const tx=db.transaction('templates','readwrite');tx.objectStore('templates').put({name:template.name,bytes:template.bytes},type);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||Error('Template storage failed'));});
+    const saved=await readTemplate(type);
+    if(!saved||saved.bytes.byteLength!==template.bytes.byteLength)throw Error('Template readback failed');
+    const bytes=new Uint8Array(saved.bytes);
+    if(!bytes.every((v,i)=>v===template.bytes[i]))throw Error('Template readback content mismatch');
+    return {name:saved.name,bytes,sheets,storage:'saved',read:'verified'};
+  }
+  async function restoreTemplates(){
+    for(const type of ['orders','data','status']){
+      try{
+        let saved=await readTemplate(type);
+        if(!saved){const old=JSON.parse(localStorage.getItem(templateKey(type))||'null');if(old)saved=await saveTemplate(type,{name:old.name,bytes:Uint8Array.from(atob(old.bytes),x=>x.charCodeAt(0))});}
+        if(saved){const bytes=new Uint8Array(saved.bytes);state.templates[type]={name:saved.name,bytes,sheets:checkTemplate(type,{bytes}),storage:'saved',read:'verified'};}
+      }catch(error){console.warn('Template read failed',type,error);state.templateErrors[type]=error.message;}
     }
   }
   function renderTemplateNames(){
@@ -484,7 +505,7 @@
   }
   function invalidate(){state.result=null;$('results').classList.add('hidden');status('dataChanged');}
   $('asOfDate').addEventListener('change',invalidate);$('fcSource').addEventListener('change',invalidate);$('sourceOverrides').addEventListener('change',e=>{const kind=e.target.dataset.sourceOverride;if(!kind)return;state.sourceOverrides[kind]=e.target.value;invalidate();renderSourceOverrides();});['ordersDate','dataDate','statusStart','statusEnd'].forEach(id=>$(id).addEventListener('change',invalidate));
-  document.querySelectorAll('[data-template]').forEach(input=>input.addEventListener('change',async()=>{invalidate();const f=input.files[0];if(!f)return;state.templates[input.dataset.template]={bytes:new Uint8Array(await f.arrayBuffer()),name:f.name};try{saveTemplate(input.dataset.template,state.templates[input.dataset.template]);}catch(error){console.warn(error);$('runStatus').textContent=error.message;renderTemplateNames();return;}renderTemplateNames();status('templateLoaded',{name:f.name});}));
+  document.querySelectorAll('[data-template]').forEach(input=>input.addEventListener('change',async()=>{invalidate();const f=input.files[0];if(!f)return;state.templates[input.dataset.template]={bytes:new Uint8Array(await f.arrayBuffer()),name:f.name};try{state.templates[input.dataset.template]=await saveTemplate(input.dataset.template,state.templates[input.dataset.template]);delete state.templateErrors[input.dataset.template];}catch(error){console.warn(error);delete state.templates[input.dataset.template];state.templateErrors[input.dataset.template]=error.message;$('runStatus').textContent=error.message;renderTemplateNames();return;}renderTemplateNames();status('templateLoaded',{name:f.name});}));
   const clearReplacement=kind=>{const old=state.files.filter(f=>f.expectedKind===kind||f.types?.includes(kind));const names=new Set(old.map(f=>f.name));state.files=state.files.filter(f=>!names.has(f.name));state.sheets=state.sheets.filter(s=>!names.has(s.file));state.replacingKind='';renderSources();renderSourceChoices();};
   document.querySelectorAll('[data-source-file]').forEach(input=>input.addEventListener('change',async e=>{const kind=input.dataset.sourceFile;if(state.replacingKind===kind)clearReplacement(kind);await ingest(e.target.files,kind);input.value='';}));
   $('bulkFiles').addEventListener('change',async e=>{const files=[...e.target.files];$('bulkSelection').textContent=files.map(f=>f.name).join(' · ');await ingest(files);e.target.value='';});
@@ -496,6 +517,6 @@
   document.querySelectorAll('.tab').forEach(tab=>tab.addEventListener('click',()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));tab.classList.add('active');state.activeTab=tab.dataset.tab;renderTable();}));
   ['ordersDate','dataDate','statusStart','statusEnd'].forEach(id=>$(id).value='');
   $('langToggle').addEventListener('click',()=>applyLanguage(languageOrder[(languageOrder.indexOf(language)+1)%languageOrder.length]));
-  restoreTemplates();
+  const templatesReady=restoreTemplates().then(()=>{renderTemplateNames();}).catch(error=>console.error(error));
   applyLanguage('zh');
 })();
