@@ -33,6 +33,7 @@ async function fill(bytes,plans,type,summary){
   const plan=plans.find(p=>p.kind===kind);if(!plan)continue;
   const d=parse(await zip.file(target.path).async('string')),sd=list(d,'sheetData')[0],allRows=list(sd,'row'),start=headerAt+2;
   const body=allRows.filter(r=>Number(r.getAttribute('r'))>=start),model=body[0];
+  if(!model&&plan.rows.length===0){matched.add(kind);count++;continue;}
   if(!model)throw Error(target.name+' 缺少資料列樣式');
   if(list(d,'tablePart').length)throw Error(target.name+' 含 Excel Table，需先確認表格範圍');
   if(list(d,'mergeCell').some(c=>Number(c.getAttribute('ref').split(':')[1]?.replace(/\D/g,'')||0)>=start))throw Error(target.name+' 資料區有合併儲存格，需確認樣板');
@@ -101,10 +102,38 @@ async function fill(bytes,plans,type,summary){
   const block=blocks[0], total=dg.findIndex((row,i)=>i>block.header&&NBYEngine.key(row[block.productColumn])==='TOTAL');
   if(total<0)throw Error('Detail shipment 區塊缺少 TOTAL');
   const canonical=v=>{let n=NBYEngine.key(v).replace(/^(SP|SU|FA|HO)\d{2}[ -]+/,'').replace(/\s+/g,' ').trim();if(n==='JORDAN TATUM 5 JBY')n='TATUM 5 NBY';return n;};
+  const body=list(dd,'sheetData')[0];let totalRow=total+1;
   for(const product of summary.products){
-   const rows=[];for(let i=block.header+1;i<total;i++)if(canonical(dg[i][block.productColumn])===canonical(product.product))rows.push(i);
-   if(rows.length!==1)throw Error('型體對應不存在或不唯一：'+product.product);
+   let target=summary.productAliases?.[NBYEngine.key(product.product)]||product.product;
+   const candidates=[];for(let i=block.header+1;i<total;i++)if(canonical(dg[i][block.productColumn])===canonical(target))candidates.push(i);
+   if(candidates.length>1)throw Error('型體對應不唯一：'+product.product);
+   if(candidates.length===1)continue;
+   if(!summary.resolveProduct)throw Error('型體對應不存在：'+product.product);
+   const resolution=await summary.resolveProduct(product.product,dg.slice(block.header+1,total).map(row=>row[block.productColumn]).filter(Boolean));
+   if(!resolution)throw Error('尚未確認型體：'+product.product);
+   if(resolution.action==='map'){
+    const matched=[];for(let i=block.header+1;i<total;i++)if(NBYEngine.key(dg[i][block.productColumn])===NBYEngine.key(resolution.target))matched.push(i);
+    if(matched.length!==1)throw Error('選擇的型體不存在或不唯一：'+resolution.target);
+    summary.productAliases[NBYEngine.key(product.product)]=resolution.target;continue;
+   }
+   if(resolution.action!=='add')throw Error('無效的型體操作');
+   const totalNode=list(body,'row').find(row=>Number(row.getAttribute('r'))===totalRow);
+   if(!totalNode||list(body,'row').some(row=>Number(row.getAttribute('r'))>totalRow))throw Error('TOTAL 不是最後一列，無法安全新增型體');
+   const templateRow=list(body,'row').find(row=>Number(row.getAttribute('r'))===totalRow-1);
+   if(!templateRow)throw Error('無法取得新型體列格式');
+   const row=templateRow.cloneNode(true);row.setAttribute('r',totalRow);
+   for(const cell of list(row,'c')){const address=col(cell.getAttribute('r'))+totalRow;cell.setAttribute('r',address);setCell(dd,row,address,'');}
+   setCell(dd,row,XLSX.utils.encode_cell({r:totalRow-1,c:block.productColumn}),product.product);
+   totalNode.setAttribute('r',totalRow+1);
+   for(const cell of list(totalNode,'c')){
+    cell.setAttribute('r',col(cell.getAttribute('r'))+(totalRow+1));
+    for(const f of list(cell,'f'))f.textContent=f.textContent.replace(/(SUM\(\$?[A-Z]+\$?\d+:\$?[A-Z]+\$?)(\d+)(\))/gi,(m,p,end,s)=>p+Math.max(Number(end),totalRow)+s);
+   }
+   body.insertBefore(row,totalNode);totalRow++;
+   const dimension=list(dd,'dimension')[0];if(dimension){const ref=dimension.getAttribute('ref');dimension.setAttribute('ref',ref.replace(/(\$?[A-Z]+\$?)\d+$/,(m,c)=>c+totalRow));}
+   summary.productAliases[NBYEngine.key(product.product)]=product.product;
   }
+  zip.file(detail.path,text(dd));
   // Actual handover timing has not been certified. Preserve every detail cell and formula.
   count=2;
  }
@@ -117,3 +146,4 @@ async function fill(bytes,plans,type,summary){
 }
 root.NBYTemplates={fill};
 })(typeof window!=='undefined'?window:globalThis);
+
