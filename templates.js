@@ -75,13 +75,14 @@ async function fill(bytes,plans,type,summary){
   const sd=parse(await zip.file(target.path).async('string')),ss=wb.Sheets[target.name],g=XLSX.utils.sheet_to_json(ss,{header:1,raw:false,defval:''});
   const hi=g.findIndex(r=>r.some(v=>NBYEngine.key(v)==='ACTUALLY SHIPMENT'));if(hi<0)throw Error('Summary 欄位未辨識');
   const dc=g[hi].findIndex(v=>NBYEngine.key(v)==='DATE'),ac=g[hi].findIndex(v=>NBYEngine.key(v)==='ACTUALLY SHIPMENT');
-  const ri=g.findIndex((r,i)=>i>hi&&root.NBYCleanDate(r[dc])===summary.date);if(ri<0)throw Error('Summary 尚無所選日期，請在樣板新增日期列');
+  const excelDate=cell=>{if(!cell)return '';if(cell.t==='n'&&cell.z&&XLSX.SSF.is_date(cell.z)){const d=XLSX.SSF.parse_date_code(cell.v,{date1904:!!wb.Workbook?.WBProps?.date1904});return d?String(d.y).padStart(4,'0')+'-'+String(d.m).padStart(2,'0')+'-'+String(d.d).padStart(2,'0'):'';}return root.NBYCleanDate(cell.w||cell.v);};
+  const ri=g.findIndex((r,i)=>i>hi&&excelDate(ss[XLSX.utils.encode_cell({r:i,c:dc})])===summary.date);if(ri<0)throw Error('Summary 尚無所選日期，請在樣板新增日期列');
   const rr=list(sd,'row').find(r=>Number(r.getAttribute('r'))===ri+1),address=XLSX.utils.encode_cell({r:ri,c:ac});
   if(ss[address]?.f)throw Error('Actually Shipment 是公式，需先確認來源規則');
   setCell(sd,rr,address,summary.actual);
   if(summary.expectDate&&summary.expect!=null){
    const ec=g[hi].findIndex(v=>NBYEngine.key(v)==='EXPECT SHIPMENT');
-   const er=g.findIndex((r,i)=>i>hi&&root.NBYCleanDate(r[dc])===summary.expectDate);
+   const er=g.findIndex((r,i)=>i>hi&&excelDate(ss[XLSX.utils.encode_cell({r:i,c:dc})])===summary.expectDate);
    if(ec<0||er<0)throw Error('Summary 缺少預計出貨日期或欄位：'+summary.expectDate);
    const ea=XLSX.utils.encode_cell({r:er,c:ec});
    if(ss[ea]?.f)throw Error('Expect Shipment 是公式，需確認樣板');
