@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <meta name="description" content="NBY Shipping Data Converter — Daily reconciliation · v2" />
   <title>NBY Shipping Data Converter</title>
-  <link rel="stylesheet" href="styles.css?v=2.6" />
+  <link rel="stylesheet" href="styles.css?v=2.8" />
   <script src="vendor/xlsx.full.min.js"></script>
   <script src="vendor/jszip.min.js"></script>
   <script defer src="engine.js"></script>
   <script defer src="templates.js"></script>
-  <script defer src="app.js?v=2.6"></script>
+  <script defer src="app.js?v=2.8"></script>
 </head>
 <body>
   <header class="topbar">
@@ -36,6 +36,7 @@
       <div id="sourceList" class="source-list empty" data-i18n="noFiles">尚未匯入檔案</div>
       <details class="individual-import"><summary data-i18n="optionalUpload">選填參考檔：AWB 或人工成品</summary><div class="optional-import"><div><span data-source-status="AWB Map" class="source-readiness">Optional / 選填 · Waiting for File / 等待檔案</span><label class="secondary-button" for="awbFiles"><span data-i18n="addAwb">新增 AWB</span></label><button type="button" class="secondary-button" data-replace-source="AWB Map" data-i18n="replaceAwb">替換 AWB</button><input id="awbFiles" data-source-file="AWB Map" type="file" multiple accept=".xls,.xlsx,.xlsm,.csv"></div><div><span class="source-readiness" data-i18n="manualReference">Manual Reference / 人工成品與歷史</span><label class="secondary-button" for="referenceFiles"><span data-i18n="chooseReference">選擇參考檔</span></label><input id="referenceFiles" data-source-file="REFERENCE" type="file" multiple accept=".xls,.xlsx,.xlsm,.csv"></div></div></details><details class="report-date-overrides"><summary data-i18n="dateOverrides">進階日期設定（僅有不同報表日期時修改）</summary><p data-i18n="dateOverrideHint">預設使用上方的本次出貨基準日。只有報表日期不同時才需要填寫；留空即沿用基準日。</p><div class="report-dates"><label><span data-i18n="ordersDate">Orders Update 日期</span><input id="ordersDate" type="date" value=""></label><label><span data-i18n="dataDate">Data Shipping 日期</span><input id="dataDate" type="date" value=""></label><label><span data-i18n="statusStart">Shipping Status 起日</span><input id="statusStart" type="date" value=""></label><label><span data-i18n="statusEnd">Shipping Status 迄日</span><input id="statusEnd" type="date" value=""></label></div></details>
       <div class="setup-grid"><label><span data-i18n="fcSourceLabel">本次 FC 來源</span><select id="fcSource"><option value="" data-i18n="importFirst">請先匯入來源</option></select></label></div>
+      <div id="sourceOverrides" class="source-overrides" hidden></div>
       <details class="template-panel"><summary data-i18n="templateTitle">正式 Excel 樣板（保留原始格式、公式與工作表）</summary><p data-i18n="templateHint">分別載入既有 .xlsx 成品作為樣板。樣板不作為原始資料；未提供時輸出 DRAFT 資料版。若樣板結構無法安全填入，該正式檔不會產生。</p><div class="setup-grid">
       <label><span data-i18n="ordersTemplate">Orders Update 樣板</span><input data-template="orders" type="file" accept=".xlsx"></label>
       <label><span data-i18n="dataTemplate">Data Shipping 樣板</span><input data-template="data" type="file" accept=".xlsx"></label>
