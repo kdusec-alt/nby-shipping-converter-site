@@ -106,21 +106,21 @@ async function fill(bytes,plans,type,summary){
   for(const product of summary.products){
    let target=summary.productAliases?.[NBYEngine.key(product.product)]||product.product;
    const candidates=[];for(let i=block.header+1;i<total;i++)if(canonical(dg[i][block.productColumn])===canonical(target))candidates.push(i);
-   if(candidates.length>1)throw Error('型體對應不唯一：'+product.product);
+   if(candidates.length>1){summary.pendingMappings?.push({date:summary.date,product:product.product,reason:'AMBIGUOUS'});continue;}
    if(candidates.length===1)continue;
-   if(!summary.resolveProduct)throw Error('型體對應不存在：'+product.product);
+   if(!summary.resolveProduct){summary.pendingMappings?.push({date:summary.date,product:product.product,reason:'UNMAPPED'});continue;}
    const resolution=await summary.resolveProduct(product.product,dg.slice(block.header+1,total).map(row=>row[block.productColumn]).filter(Boolean));
-   if(!resolution)throw Error('尚未確認型體：'+product.product);
+   if(!resolution){summary.pendingMappings?.push({date:summary.date,product:product.product,reason:'UNCONFIRMED'});continue;}
    if(resolution.action==='map'){
     const matched=[];for(let i=block.header+1;i<total;i++)if(NBYEngine.key(dg[i][block.productColumn])===NBYEngine.key(resolution.target))matched.push(i);
-    if(matched.length!==1)throw Error('選擇的型體不存在或不唯一：'+resolution.target);
+    if(matched.length!==1){summary.pendingMappings?.push({date:summary.date,product:product.product,reason:'INVALID_OR_AMBIGUOUS_SELECTION'});continue;}
     summary.productAliases[NBYEngine.key(product.product)]=resolution.target;continue;
    }
-   if(resolution.action!=='add')throw Error('無效的型體操作');
+   if(resolution.action!=='add'){summary.pendingMappings?.push({date:summary.date,product:product.product,reason:'UNCONFIRMED'});continue;}
    const totalNode=list(body,'row').find(row=>Number(row.getAttribute('r'))===totalRow);
-   if(!totalNode||list(body,'row').some(row=>Number(row.getAttribute('r'))>totalRow))throw Error('TOTAL 不是最後一列，無法安全新增型體');
+   if(!totalNode||list(body,'row').some(row=>Number(row.getAttribute('r'))>totalRow)){summary.pendingMappings?.push({date:summary.date,product:product.product,reason:'CANNOT_SAFELY_EXPAND_TEMPLATE'});continue;}
    const templateRow=list(body,'row').find(row=>Number(row.getAttribute('r'))===totalRow-1);
-   if(!templateRow)throw Error('無法取得新型體列格式');
+   if(!templateRow){summary.pendingMappings?.push({date:summary.date,product:product.product,reason:'MISSING_ROW_FORMAT'});continue;}
    const row=templateRow.cloneNode(true);row.setAttribute('r',totalRow);
    for(const cell of list(row,'c')){const address=col(cell.getAttribute('r'))+totalRow;cell.setAttribute('r',address);setCell(dd,row,address,'');}
    setCell(dd,row,XLSX.utils.encode_cell({r:totalRow-1,c:block.productColumn}),product.product);
@@ -146,4 +146,5 @@ async function fill(bytes,plans,type,summary){
 }
 root.NBYTemplates={fill};
 })(typeof window!=='undefined'?window:globalThis);
+
 
