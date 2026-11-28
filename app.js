@@ -307,9 +307,10 @@
     const productDateOrders=new Map(),totalDateOrders=new Map();
     for(const row of statusRows){const date=cleanDate(value(row,'Manifest Scan Date')),product=String(value(row,'Product Name')||'Not provided'),wo=norm(value(row,'Work Order Nbr'));if(!date||!wo)continue;const pk=`${date}|${product}`;if(!productDateOrders.has(pk))productDateOrders.set(pk,{date,product,workOrders:new Set()});productDateOrders.get(pk).workOrders.add(wo);if(!totalDateOrders.has(date))totalDateOrders.set(date,new Set());totalDateOrders.get(date).add(wo);}
     const computedDates=[...totalDateOrders.keys()].sort();
+    const pairCount=(workOrders,date)=>date===r.reportDates.data&&[...workOrders].every(wo=>matchByWo.get(wo)?.pairQty!=null)?[...workOrders].reduce((total,wo)=>total+matchByWo.get(wo).pairQty,0):null;
     for(const x of productDateOrders.values()){if(!historicalProducts.has(x.product))historicalProducts.set(x.product,{});historicalProducts.get(x.product)[x.date]=x.workOrders.size;if(!historicalDates.includes(x.date))historicalDates.push(x.date);}
     const statusSummary=historySummary.filter(row=>!computedDates.includes(cleanDate(value(row,'Date')))).map(row=>({'Date':cleanDate(value(row,'Date')),'Actually Shipment':value(row,'Actually Shipment'),'Expect Shipment':value(row,'Expect Shipment')}));
-    for(const date of computedDates)statusSummary.push({'Date':date,'Actually Shipment':totalDateOrders.get(date).size,'Expect Shipment':'','Actually Shipment Rule':'Distinct Work Order Nbr; shoe-pair unit not confirmed','Expect Shipment Rule':'PENDING — not calculated'});
+    for(const date of computedDates)statusSummary.push({'Date':date,'Actually Shipment':totalDateOrders.get(date).size,'Expect Shipment':historySummary.find(row=>cleanDate(value(row,'Date'))===date)?.['Expect Shipment']??'','SAP Verified PAA':pairCount(totalDateOrders.get(date),date),'Actually Shipment Rule':'Manifest work orders; SAP PAA verified separately','Expect Shipment Rule':'PENDING — not calculated'});
     const statusDetail=[...historicalProducts].map(([product,counts])=>Object.assign({'Product Name':product},...historicalDates.sort().map(date=>({[date]:counts[date]??''}))));
     const upsBook=r.sourceDecisions?.UPS?.selected;const upsRaw=cleanRows(state.sheets.filter(s=>s.kind==='UPS'&&(!upsBook||s.file===upsBook)).flatMap(s=>s.rows));
     const upsExport=upsRaw.map((row,i)=>{const track=norm(value(row,'Tracking Number')),ordersForTrack=r.orders.filter(o=>norm(o.shipper)==='UPS'&&norm(o.track)===track);return {...row,'FC Work Order Nbr':ordersForTrack.map(o=>o.wo).join(', '),'FC Match Count':ordersForTrack.length,'Duplicate Tracking in UPS':(r.upsRows.find(u=>norm(u.Tracking_Number)===track)?.UPS_紀錄數||0)>1?'REVIEW':'','Source File':state.sheets.find(s=>s.kind==='UPS')?.file||''};});
@@ -345,7 +346,7 @@
     ]){
       const template=state.templates[type];
       if(!files[name]){r.templateStatus.push(name+'：缺少必要來源或沒有符合資料列');continue;}
-      if(template){try{if(type==='status'){let bytes=template.bytes;for(const date of computedDates){const products=[...productDateOrders.values()].filter(x=>x.date===date).map(x=>({product:x.product,count:x.workOrders.size}));bytes=await NBYTemplates.fill(bytes,plans,type,{date,actual:totalDateOrders.get(date).size,products});}if(!computedDates.length)throw Error('所選期間沒有 FC 出貨列可更新');files[name]=bytes;}else files[name]=await NBYTemplates.fill(template.bytes,plans,type,{});r.templateStatus.push(name+'：原樣板格式');}catch(e){delete files[name];r.templateStatus.push(name+'：未輸出，'+e.message);}}
+      if(template){try{if(type==='status'){let bytes=template.bytes;for(const date of computedDates){const products=[...productDateOrders.values()].filter(x=>x.date===date).map(x=>({product:x.product,count:x.workOrders.size}));bytes=await NBYTemplates.fill(bytes,plans,type,{date,actual:totalDateOrders.get(date).size,products});}if(!computedDates.length)throw Error('所選期間沒有 FC 出貨列可更新');files[name]=bytes;const updated={...template,bytes:new Uint8Array(bytes)};try{saveTemplate(type,updated);state.templates[type]=updated;}catch(error){console.warn('Shipping history could not be saved',error);r.templateStatus.push(name+'：未能儲存歷史至瀏覽器');}}else files[name]=await NBYTemplates.fill(template.bytes,plans,type,{});r.templateStatus.push(name+'：原樣板格式');}catch(e){delete files[name];r.templateStatus.push(name+'：未輸出，'+e.message);}}
       else {const draft='DRAFT '+name;files[draft]=files[name];delete files[name];r.templateStatus.push(name+'：未載入樣板，僅提供 DRAFT 資料版');}
     }
     const reportState=(name,ready)=>{const official=!!files[name],draft=!!files['DRAFT '+name];return !ready?'Missing Required Source':official?'Generated – Pending Validation':draft?'Generated – Draft Pending Validation':'Failed'};
@@ -362,7 +363,8 @@
     testSummary.push(...r.reportStatus.map(x=>({Check:`Report: ${x.name}`,Rule:'Output generation is separate from manual verification',Actual:x.state,Status:x.state,Source:'Processing result'})));
     testSummary.push({Check:'Output validation',Rule:'Generated workbook and source readiness still require manual row-by-row review',Actual:Object.keys(files).join(', '),Status:'PENDING MANUAL VALIDATION',Source:'Generated file list'});
     make(outputNames[5],[['Exceptions',exceptions],['SF Quantity References',englishRows(r.sfRows)],['UPS Quantity Status',englishRows(r.upsRows)],['Shipping Status Diagnostics',englishRows(statusSummary)],['Test Result',testSummary],['Template Status',r.templateStatus.map(Status=>({Status}))],['Processing Log',state.files.map(f=>({File:f.name,Bytes:f.size,ImportedAt:f.importedAt,Types:f.types.join(', '),Error:f.error||'',Validation:JSON.stringify(f.validation||[]),ReportDates:JSON.stringify(r.reportDates)}))],['Golden Sample Differences',goldenDifferences],['Golden Sample Summary',englishRows(r.manual.summaries.map(({details,...x})=>x))]]);
-    const audit={build:window.NBYBuild||{status:'BUILD METADATA UNAVAILABLE'},version:'2.1.1',processedAt:new Date().toISOString(),manifestDate:r.target,reportDates:r.reportDates,sourceSelections:r.sourceDecisions,source:state.files.map(f=>({name:f.name,size:f.size,importedAt:f.importedAt,types:f.types,validation:f.validation||[],error:f.error||''})),selectedFc:{file:r.selectedFc.file,sheet:r.selectedFc.sheet},counts:r.counts,exceptions:r.anomalies.length,templates:r.templateStatus,reportStatus:r.reportStatus,expectShipment:'PENDING',goldenSample:'NOT CERTIFIED'};
+    await buildReady;
+    const audit={build:{...window.NBYBuild},version:'2.1.2',sapPaaByDate:Object.fromEntries(computedDates.map(date=>[date,pairCount(totalDateOrders.get(date),date)])),processedAt:new Date().toISOString(),manifestDate:r.target,reportDates:r.reportDates,sourceSelections:r.sourceDecisions,source:state.files.map(f=>({name:f.name,size:f.size,importedAt:f.importedAt,types:f.types,validation:f.validation||[],error:f.error||''})),selectedFc:{file:r.selectedFc.file,sheet:r.selectedFc.sheet},counts:r.counts,exceptions:r.anomalies.length,templates:r.templateStatus,reportStatus:r.reportStatus,expectShipment:'PENDING',goldenSample:'NOT CERTIFIED'};
     r.audit=audit;try{const history=JSON.parse(localStorage.getItem('nby-audit')||'[]');history.unshift(audit);localStorage.setItem('nby-audit',JSON.stringify(history.slice(0,30)));}catch(e){};
     r.outputFiles=files;r.outputTestSummary=testSummary;renderReportStatuses();renderOutputFiles();return files;
   }
@@ -386,8 +388,42 @@
   Object.assign(i18n.zh,{dateLabel:'Report Date（報表日期）',missingPreviousFc:'缺少 {date} 的 Nike FC 原始資料；Orders Update 必須使用 Report Date 前一天的 Manifest Scan Date。請批次補入該日期原始檔。',fcSourceLabel:'已匯入 FC 日期來源（系統自動分配）'});
   Object.assign(i18n.en,{dateLabel:'Report Date',missingPreviousFc:'Missing raw Nike FC data for {date}. Orders Update requires the previous day’s Manifest Scan Date. Import the raw file for that date.',fcSourceLabel:'Imported FC sources (automatically assigned)'});
   Object.assign(i18n.vi,{dateLabel:'Ngày báo cáo (Report Date)',missingPreviousFc:'Thiếu dữ liệu Nike FC gốc ngày {date}. Orders Update sử dụng Manifest Scan Date của ngày trước ngày báo cáo. Vui lòng tải thêm tệp gốc của ngày đó.',fcSourceLabel:'Nguồn FC đã tải (tự động phân bổ)'});
-  function applyLanguage(next){
-    language=next;document.documentElement.lang=language==='zh'?'zh-Hant':language==='vi'?'vi':'en';
+  window.NBYBuild={version:'2.1.2',buildId:'shipping-2.1.2-r1',gitCommitSha:null,deployedAt:null};
+  const buildLabel=document.getElementById('buildInfo');
+  function showBuild(){
+    if(!buildLabel)return;
+    const b=window.NBYBuild;
+    buildLabel.textContent=`Version ${b.version} · Build ${b.buildId} · Git SHA ${b.gitCommitSha||'—'} · Deployment UTC ${b.deployedAt||'—'}`;
+  }
+  showBuild();
+  const buildReady=typeof fetch==='function'?fetch('build-info.json',{cache:'no-store'}).then(r=>r.ok?r.json():null).then(info=>{
+    if(info?.buildId===window.NBYBuild.buildId){Object.assign(window.NBYBuild,info);showBuild();}
+  }).catch(()=>{}):Promise.resolve();
+  const templateKey=type=>'nby-template-v1-'+type;
+  function saveTemplate(type, template) {
+    let binary='';
+    for(let offset=0;offset<template.bytes.length;offset+=16384)
+      binary+=String.fromCharCode(...template.bytes.subarray(offset,offset+16384));
+    localStorage.setItem(templateKey(type),JSON.stringify({name:template.name,bytes:btoa(binary)}));
+  }
+  function restoreTemplates() {
+    for(const type of ['orders','data','status']) {
+      try {
+        const saved=JSON.parse(localStorage.getItem(templateKey(type))||'null');
+        if(saved)state.templates[type]={name:saved.name,bytes:Uint8Array.from(atob(saved.bytes),x=>x.charCodeAt(0))};
+      } catch(error) { console.warn('Template could not be restored',type,error); }
+    }
+  }
+  function renderTemplateNames(){
+    document.querySelectorAll('[data-template]').forEach(input=>{
+      const template=state.templates[input.dataset.template];
+      input.title=template?.name||'';
+      input.parentElement.querySelector('small')?.remove();
+      if(template){const label=document.createElement('small');label.textContent=template.name;input.after(label);}
+    });
+  }
+    function applyLanguage(next){
+    language=next;renderTemplateNames();document.documentElement.lang=language==='zh'?'zh-Hant':language==='vi'?'vi':'en';
     document.querySelectorAll('[data-i18n]').forEach(el=>{el.textContent=t(el.dataset.i18n);});
     document.querySelectorAll('[data-i18n-placeholder]').forEach(el=>{el.placeholder=t(el.dataset.i18nPlaceholder);});
     const nextLang=languageOrder[(languageOrder.indexOf(language)+1)%languageOrder.length];
@@ -399,17 +435,18 @@
   }
   function invalidate(){state.result=null;$('results').classList.add('hidden');status('dataChanged');}
   $('asOfDate').addEventListener('change',invalidate);$('fcSource').addEventListener('change',invalidate);$('sourceOverrides').addEventListener('change',e=>{const kind=e.target.dataset.sourceOverride;if(!kind)return;state.sourceOverrides[kind]=e.target.value;invalidate();renderSourceOverrides();});['ordersDate','dataDate','statusStart','statusEnd'].forEach(id=>$(id).addEventListener('change',invalidate));
-  document.querySelectorAll('[data-template]').forEach(input=>input.addEventListener('change',async()=>{invalidate();const f=input.files[0];if(!f){delete state.templates[input.dataset.template];return;}state.templates[input.dataset.template]={bytes:new Uint8Array(await f.arrayBuffer()),name:f.name};status('templateLoaded',{name:f.name});}));
+  document.querySelectorAll('[data-template]').forEach(input=>input.addEventListener('change',async()=>{invalidate();const f=input.files[0];if(!f)return;state.templates[input.dataset.template]={bytes:new Uint8Array(await f.arrayBuffer()),name:f.name};try{saveTemplate(input.dataset.template,state.templates[input.dataset.template]);}catch(error){console.warn(error);$('runStatus').textContent=error.message;renderTemplateNames();return;}renderTemplateNames();status('templateLoaded',{name:f.name});}));
   const clearReplacement=kind=>{const old=state.files.filter(f=>f.expectedKind===kind||f.types?.includes(kind));const names=new Set(old.map(f=>f.name));state.files=state.files.filter(f=>!names.has(f.name));state.sheets=state.sheets.filter(s=>!names.has(s.file));state.replacingKind='';renderSources();renderSourceChoices();};
   document.querySelectorAll('[data-source-file]').forEach(input=>input.addEventListener('change',async e=>{const kind=input.dataset.sourceFile;if(state.replacingKind===kind)clearReplacement(kind);await ingest(e.target.files,kind);input.value='';}));
   $('bulkFiles').addEventListener('change',async e=>{const files=[...e.target.files];$('bulkSelection').textContent=files.map(f=>f.name).join(' · ');await ingest(files);e.target.value='';});
   const drop=$('bulkDropZone');drop.addEventListener('dragover',e=>{e.preventDefault();drop.classList.add('dragover');});drop.addEventListener('dragleave',()=>drop.classList.remove('dragover'));drop.addEventListener('drop',async e=>{e.preventDefault();drop.classList.remove('dragover');const files=[...e.dataTransfer.files];$('bulkSelection').textContent=files.map(f=>f.name).join(' · ');await ingest(files);});
   document.querySelectorAll('[data-replace-source]').forEach(button=>button.addEventListener('click',()=>{state.replacingKind=button.dataset.replaceSource;document.querySelector(`[data-source-file="${button.dataset.replaceSource}"]`)?.click();}));
   $('runButton').addEventListener('click',async()=>{if(state.busy)return;state.busy=true;$('runButton').disabled=true;invalidate();status('runProcessing');try{await new Promise(resolve=>setTimeout(resolve,0));await calculate();status('runDone');}catch(e){console.error(e);$('runStatus').textContent=`${t('runFailed')}: ${uiText(e.message)}`;}finally{state.busy=false;$('runButton').disabled=false;}});
-  $('clearButton').addEventListener('click',()=>{state.templates={};state.replacingKind='';document.querySelectorAll('[data-template]').forEach(e=>e.value='');state.files=[];state.sheets=[];state.result=null;state.sourceOverrides={};document.querySelectorAll('[data-source-file]').forEach(input=>input.value='');$('bulkFiles').value='';$('bulkSelection').textContent='';$('results').classList.add('hidden');$('runStatus').textContent='';$('runButton').disabled=true;$('clearButton').disabled=true;renderSources();renderSourceChoices();renderSourceOverrides();});
+  $('clearButton').addEventListener('click',()=>{state.replacingKind='';document.querySelectorAll('[data-template]').forEach(e=>e.value='');state.files=[];state.sheets=[];state.result=null;state.sourceOverrides={};document.querySelectorAll('[data-source-file]').forEach(input=>input.value='');$('bulkFiles').value='';$('bulkSelection').textContent='';$('results').classList.add('hidden');$('runStatus').textContent='';$('runButton').disabled=true;$('clearButton').disabled=true;renderSources();renderSourceChoices();renderSourceOverrides();});
   $('exportButton').addEventListener('click',exportXlsx);$('tableSearch').addEventListener('input',renderTable);
   document.querySelectorAll('.tab').forEach(tab=>tab.addEventListener('click',()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));tab.classList.add('active');state.activeTab=tab.dataset.tab;renderTable();}));
   ['ordersDate','dataDate','statusStart','statusEnd'].forEach(id=>$(id).value='');
   $('langToggle').addEventListener('click',()=>applyLanguage(languageOrder[(languageOrder.indexOf(language)+1)%languageOrder.length]));
+  restoreTemplates();
   applyLanguage('zh');
 })();
