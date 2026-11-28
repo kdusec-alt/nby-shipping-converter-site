@@ -1,6 +1,6 @@
 {
-  "version": "2.1.5",
-  "buildId": "shipping-2.1.5-r1",
-  "gitCommitSha": "754d4349acd2cc57766e7427a44be93503ea8a65",
-  "deployedAt": "2026-11-28T07:19:22Z"
+  "version": "2.1.6 Beta",
+  "buildId": "shipping-2.1.6-beta1",
+  "gitCommitSha": "e31dff8040afedc9280bc0d09119b5101706af65",
+  "deployedAt": "2026-11-28T07:35:50Z"
 }
