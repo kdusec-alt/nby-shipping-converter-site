@@ -186,7 +186,7 @@
     const rawFcSheets=validSourceSheets('Nike FC').filter(s=>!s.processed);
     if(!rawFcSheets.length)throw Error(t('fcMissing'));
     const previousDay=new Date(target+'T00:00:00Z');previousDay.setUTCDate(previousDay.getUTCDate()-1);
-    const reportDates={orders:previousDay.toISOString().slice(0,10),data:target,statusStart:'0001-01-01',statusEnd:target};
+    const reportDates={orders:previousDay.toISOString().slice(0,10),data:target,statusStart:target.slice(0,8)+'01',statusEnd:target};
     const dateOf=row=>cleanDate(value(row,'Manifest Scan Date'));
     const rawRows=NBYEngine.unique(rawFcSheets.flatMap(s=>s.rows));
     const selectedOrders=rawRows.filter(row=>dateOf(row)===reportDates.orders);
@@ -199,16 +199,13 @@
     const {orders,upsRows,sfRows,anomalies}=NBYEngine.reconcile({fc:selectedData,sap,stock:mb52,ups,sf,awb:source('AWB Map'),date:target,cleanDate});
     const add=(severity,category,key,detail)=>anomalies.push({嚴重度:severity,異常類型:category,工單或Tracking:key,說明:detail});
     if(!selectedOrders.length)add('中','Orders Update — Missing Required Source',reportDates.orders,t('missingPreviousFc',{date:reportDates.orders}));
-    for(const [kind,decision] of Object.entries(sourceDecisions))if(decision.ignored.length)add('中','同類來源多檔已選定單一活頁簿',kind,`已選用 ${decision.selected}；未納入本次核對：${decision.ignored.join(', ')}。其他檔案仍保留於本次匯入與處理紀錄。`);
     selectedFc.linked=orders.filter(o=>o.sapMatch).length;selectedFc.rate=orders.length?selectedFc.linked/orders.length:0;
 
     for(const f of state.files)if(f.error||!f.sheetCount)add('高','來源檔讀取失敗或未辨識',f.name,f.error||'沒有可辨識資料表');else if(f.validation?.some(v=>!v.valid))add('高','來源缺少必要欄位',f.name,f.validation.filter(v=>!v.valid).map(v=>`${v.sheet}: ${v.missing.join(', ')}`).join('；'));
     for(const kind of ['SAP ZRSD1019','SAP MB52','UPS','SF Baozun'])if(!all(kind).length)add('中','來源未提供或未通過欄位驗證',kind,'相關報表狀態會標示缺少必要來源；不以空白欄位冒充匹配');
     if(!all('AWB Map').length)add('低','AWB Mapping 未提供','AWB Map','AWB 保留缺值，不自行產生。');
-    for(const f of state.files)add('低','下載批次待確認',f.name,'匯入時間不代表來源下載時間，請確認同批次');
     if(selected.processed)add('高','使用人工加工資料作為 FC',selected.file,'可測試關聯，但不可視為獨立 FC 原始資料 Golden Sample 驗收通過');
     const selectedDates=[...new Set(fcRows.map(dateOf).filter(Boolean))];
-    if(selectedDates.length)add('低','報表日期範圍',selected.file,`Orders Update=${reportDates.orders}；Data Shipping=${reportDates.data}；Shipping Status=${reportDates.statusStart} 至 ${reportDates.statusEnd}`);
     if(!/^\d{4}-\d{2}-\d{2}$/.test(target))throw Error('請選擇有效日期');
     const manual=validateManual(manualSheets,orders,upsRows,sfRows,mb52);
     manual.lines.filter(x=>x.結果!=='通過').forEach(x=>add('中','人工成品逐筆比對差異',x.工單,x.差異||x.結果));
@@ -223,6 +220,29 @@
     const summary=(s,type,count,ok,details='')=>summaries.push({檔案:s.file,工作表:s.sheet,比對項目:type,人工筆數:count,成功比對:ok,結果:count===ok?'通過':'需檢查',差異摘要:details});
     for(const s of sheets){
       const rows=s.rows;
+      const baselineRows=rows.filter(r=>value(r,'Work Order Nbr')&&value(r,'Manifest Scan Date'));
+      if(baselineRows.length){
+        let matched=0,checks=0,matches=0;
+        for(const row of baselineRows){
+          const wo=norm(value(row,'Work Order Nbr')), order=byWO.get(wo), differences=[];
+          if(!order) differences.push('人工成品有／轉檔結果無');
+          else {
+            const expected={...order.source,ZRSD1019:order.sapDoc,MB52:order.mbDoc,AWB:order.awb};
+            for(const [column,manual] of Object.entries(row)){
+              const key=Object.keys(expected).find(k=>norm(k)===norm(column));
+              if(!key||/^欄位\d/.test(column))continue;
+              checks++;
+              const normalise=v=>/date/i.test(column)?cleanDate(v):norm(v);
+              const left=normalise(manual),right=normalise(expected[key]);
+              if(left===right)matches++;else differences.push(`${column}:人工=${manual}／系統=${expected[key]??''}`);
+            }
+          }
+          if(!differences.length)matched++;
+          lines.push({人工檔案:s.file,工作表:s.sheet,比對類型:'人工報表欄位',工單:wo,結果:differences.length?'有差異':'通過',差異:differences.join('；')});
+        }
+        summary(s,'人工報表逐筆／欄位',baselineRows.length,matched,`欄位相符 ${matches}/${checks}`);
+        continue;
+      }
       const orderRows=rows.filter(r=>value(r,'Work Order Nbr')&&(value(r,'SAP 訂單匹配')||value(r,'SAP SD Document ZRSD')||value(r,'核對狀態')));
       if(orderRows.length){let matched=0,fieldChecks=0,fieldMatches=0;
         for(const r of orderRows){const wo=norm(value(r,'Work Order Nbr'));const o=byWO.get(wo);let diffs=[];let rowChecks=0;
@@ -264,7 +284,7 @@
         summary(s,'MB52 庫存列逐筆',stockRows.length,matched);
       }
     }
-    if(!summaries.length)summaries.push({檔案:'',工作表:'',比對項目:'人工成品',人工筆數:0,成功比對:0,結果:'尚未匯入人工成品'});
+    if(!summaries.length)summaries.push({檔案:'',工作表:'',比對項目:'人工成品',人工筆數:0,成功比對:0,結果:sheets.length?'已匯入人工成品，但沒有可比對的工作表':'尚未匯入人工成品'});
     return {summaries,lines};
   }
   const metricKeys=['metricOrders','metricData','metricStatus','metricSap','metricMb','metricExceptions'];
@@ -364,7 +384,7 @@
     testSummary.push({Check:'Output validation',Rule:'Generated workbook and source readiness still require manual row-by-row review',Actual:Object.keys(files).join(', '),Status:'PENDING MANUAL VALIDATION',Source:'Generated file list'});
     make(outputNames[5],[['Exceptions',exceptions],['SF Quantity References',englishRows(r.sfRows)],['UPS Quantity Status',englishRows(r.upsRows)],['Shipping Status Diagnostics',englishRows(statusSummary)],['Test Result',testSummary],['Template Status',r.templateStatus.map(Status=>({Status}))],['Processing Log',state.files.map(f=>({File:f.name,Bytes:f.size,ImportedAt:f.importedAt,Types:f.types.join(', '),Error:f.error||'',Validation:JSON.stringify(f.validation||[]),ReportDates:JSON.stringify(r.reportDates)}))],['Golden Sample Differences',goldenDifferences],['Golden Sample Summary',englishRows(r.manual.summaries.map(({details,...x})=>x))]]);
     await buildReady;
-    const audit={build:{...window.NBYBuild},version:'2.1.2',sapPaaByDate:Object.fromEntries(computedDates.map(date=>[date,pairCount(totalDateOrders.get(date),date)])),processedAt:new Date().toISOString(),manifestDate:r.target,reportDates:r.reportDates,sourceSelections:r.sourceDecisions,source:state.files.map(f=>({name:f.name,size:f.size,importedAt:f.importedAt,types:f.types,validation:f.validation||[],error:f.error||''})),selectedFc:{file:r.selectedFc.file,sheet:r.selectedFc.sheet},counts:r.counts,exceptions:r.anomalies.length,templates:r.templateStatus,reportStatus:r.reportStatus,expectShipment:'PENDING',goldenSample:'NOT CERTIFIED'};
+    const audit={build:{...window.NBYBuild},version:'2.1.3',sapPaaByDate:Object.fromEntries(computedDates.map(date=>[date,pairCount(totalDateOrders.get(date),date)])),processedAt:new Date().toISOString(),manifestDate:r.target,reportDates:r.reportDates,sourceSelections:r.sourceDecisions,source:state.files.map(f=>({name:f.name,size:f.size,importedAt:f.importedAt,types:f.types,validation:f.validation||[],error:f.error||''})),selectedFc:{file:r.selectedFc.file,sheet:r.selectedFc.sheet},counts:r.counts,exceptions:r.anomalies.length,templates:r.templateStatus,reportStatus:r.reportStatus,expectShipment:'PENDING',goldenSample:'NOT CERTIFIED'};
     r.audit=audit;try{const history=JSON.parse(localStorage.getItem('nby-audit')||'[]');history.unshift(audit);localStorage.setItem('nby-audit',JSON.stringify(history.slice(0,30)));}catch(e){};
     r.outputFiles=files;r.outputTestSummary=testSummary;renderReportStatuses();renderOutputFiles();return files;
   }
@@ -388,7 +408,7 @@
   Object.assign(i18n.zh,{dateLabel:'Report Date（報表日期）',missingPreviousFc:'缺少 {date} 的 Nike FC 原始資料；Orders Update 必須使用 Report Date 前一天的 Manifest Scan Date。請批次補入該日期原始檔。',fcSourceLabel:'已匯入 FC 日期來源（系統自動分配）'});
   Object.assign(i18n.en,{dateLabel:'Report Date',missingPreviousFc:'Missing raw Nike FC data for {date}. Orders Update requires the previous day’s Manifest Scan Date. Import the raw file for that date.',fcSourceLabel:'Imported FC sources (automatically assigned)'});
   Object.assign(i18n.vi,{dateLabel:'Ngày báo cáo (Report Date)',missingPreviousFc:'Thiếu dữ liệu Nike FC gốc ngày {date}. Orders Update sử dụng Manifest Scan Date của ngày trước ngày báo cáo. Vui lòng tải thêm tệp gốc của ngày đó.',fcSourceLabel:'Nguồn FC đã tải (tự động phân bổ)'});
-  window.NBYBuild={version:'2.1.2',buildId:'shipping-2.1.2-r1',gitCommitSha:null,deployedAt:null};
+  window.NBYBuild={version:'2.1.2',buildId:'shipping-2.1.3-r1',gitCommitSha:null,deployedAt:null};
   const buildLabel=document.getElementById('buildInfo');
   function showBuild(){
     if(!buildLabel)return;
