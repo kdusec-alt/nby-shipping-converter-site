@@ -41,6 +41,7 @@
     const first = rows?.[0] || {}; const keys = Object.keys(first).map(norm); const has = (...k) => k.every(x => keys.includes(norm(x)));
     if (has('Date','Actually shipment','Expect shipment')) return 'Shipping Status Summary';
     if (has('SAP 訂單匹配') || has('核對狀態') || has('Work Order Nbr','SAP SD Document ZRSD')) return '人工成品';
+    if (has('Work Order Nbr','Manifest Scan Date') && (has('ZRSD1019') || has('MB52') || has('Pick up date') || has('Report date'))) return '人工成品';
     if (has('Work Order Nbr','Manifest Scan Date','Shipper')) return 'Nike FC';
     if (has('OrderNumber','ConsolidationShipmentId')) return 'AWB Map';
     if (has('Work Order Number','Tracking Number')) return 'SF Baozun';
@@ -90,7 +91,7 @@
       if(statusBook && /^summary$/i.test(name)){const rows=rowsFromSheet(wb.Sheets[name]);if(rows.length)parsed.push({file:file.name,sheet:name,kind:'Shipping Status Summary',rows});continue;}
       if(statusBook && /^detail shipment$/i.test(name)){const rows=statusDetailRows(wb.Sheets[name]);if(rows.length)parsed.push({file:file.name,sheet:name,kind:'Shipping Status Detail',rows});continue;}
       const rows = rowsFromSheet(wb.Sheets[name],expectedKind); if (!rows.length) continue;
-      const detectedKind=kindOf(rows,file.name); const kind=expectedKind==='REFERENCE'?'人工成品':(expectedKind?expectedKind:(detectedKind|| (manualBook?'人工成品':''))); if (kind) parsed.push({file:file.name,sheet:name,kind,rows,processed:rows.some(r=>Object.hasOwn(r,'ZRSD1019')||Object.hasOwn(r,'MB52'))});
+      const detectedKind=kindOf(rows,file.name); const kind=detectedKind==='人工成品'?'人工成品':expectedKind==='REFERENCE'?'人工成品':(expectedKind?expectedKind:(detectedKind|| (manualBook?'人工成品':''))); if (kind) parsed.push({file:file.name,sheet:name,kind,rows,processed:rows.some(r=>Object.hasOwn(r,'ZRSD1019')||Object.hasOwn(r,'MB52'))});
     }
     return parsed;
   }
@@ -195,7 +196,7 @@
     const selected={file:[...new Set(rawFcSheets.map(s=>s.file))].join(', '),sheet:'Multiple raw FC worksheets',rows:fcRows,processed:false};
     const selectedFc={s:selected,rows:fcRows,ordersRows:selectedOrders,dataRows:selectedData,statusRows:selectedStatus};
     const manualSheets=state.sheets.filter(s=>s.kind==='人工成品');
-    const {orders,upsRows,sfRows,anomalies}=NBYEngine.reconcile({fc:fcRows,sap,stock:mb52,ups,sf,awb:source('AWB Map'),date:target,cleanDate});
+    const {orders,upsRows,sfRows,anomalies}=NBYEngine.reconcile({fc:selectedData,sap,stock:mb52,ups,sf,awb:source('AWB Map'),date:target,cleanDate});
     const add=(severity,category,key,detail)=>anomalies.push({嚴重度:severity,異常類型:category,工單或Tracking:key,說明:detail});
     if(!selectedOrders.length)add('中','Orders Update — Missing Required Source',reportDates.orders,t('missingPreviousFc',{date:reportDates.orders}));
     for(const [kind,decision] of Object.entries(sourceDecisions))if(decision.ignored.length)add('中','同類來源多檔已選定單一活頁簿',kind,`已選用 ${decision.selected}；未納入本次核對：${decision.ignored.join(', ')}。其他檔案仍保留於本次匯入與處理紀錄。`);
@@ -296,16 +297,6 @@
       row.ZRSD1019=o.sapDoc||'';
       row.MB52=o.mbDoc||'';
       row.AWB=o.awb||'';
-      row['SAP Materials']=[...new Set((o.sapRows||[]).map(x=>value(x,'Material')).filter(Boolean))].join(', ');
-      row['SAP Item(s)']=[...new Set((o.sapRows||[]).map(x=>value(x,'Item (SD)','SD Item')).filter(Boolean))].join(', ');
-      row['SAP Confirmed Quantity (reference)']=o.confirmedQty??'';
-      row['SAP GAC']=[...new Set((o.sapRows||[]).map(x=>value(x,'GAC')).filter(Boolean))].join(', ');
-      row['SAP Style Code']=[...new Set((o.sapRows||[]).map(x=>value(x,'Style Code')).filter(Boolean))].join(', ');
-      row['MB52 Storage Location(s)']=[...new Set((o.stockRows||[]).map(x=>value(x,'Storage Location')).filter(Boolean))].join(', ');
-      row['MB52 Batch(es)']=[...new Set((o.stockRows||[]).map(x=>value(x,'Batch')).filter(Boolean))].join(', ');
-      row['MB52 Unrestricted (reference)']=sumNumeric(o.stockRows||[],'Unrestricted');
-      row['MB52 Blocked Stock (reference)']=sumNumeric(o.stockRows||[],'Blocked Stock');
-      row['AWB Match Status']=o.awb?'MATCHED FROM SOURCE MAP':'MISSING — NOT GENERATED';
       return row;
     }));
     const statusRows=cleanRows(orderSource?.statusRows||[]);
@@ -371,7 +362,7 @@
     testSummary.push(...r.reportStatus.map(x=>({Check:`Report: ${x.name}`,Rule:'Output generation is separate from manual verification',Actual:x.state,Status:x.state,Source:'Processing result'})));
     testSummary.push({Check:'Output validation',Rule:'Generated workbook and source readiness still require manual row-by-row review',Actual:Object.keys(files).join(', '),Status:'PENDING MANUAL VALIDATION',Source:'Generated file list'});
     make(outputNames[5],[['Exceptions',exceptions],['SF Quantity References',englishRows(r.sfRows)],['UPS Quantity Status',englishRows(r.upsRows)],['Shipping Status Diagnostics',englishRows(statusSummary)],['Test Result',testSummary],['Template Status',r.templateStatus.map(Status=>({Status}))],['Processing Log',state.files.map(f=>({File:f.name,Bytes:f.size,ImportedAt:f.importedAt,Types:f.types.join(', '),Error:f.error||'',Validation:JSON.stringify(f.validation||[]),ReportDates:JSON.stringify(r.reportDates)}))],['Golden Sample Differences',goldenDifferences],['Golden Sample Summary',englishRows(r.manual.summaries.map(({details,...x})=>x))]]);
-    const audit={version:'2.1.0',processedAt:new Date().toISOString(),manifestDate:r.target,reportDates:r.reportDates,sourceSelections:r.sourceDecisions,source:state.files.map(f=>({name:f.name,size:f.size,importedAt:f.importedAt,types:f.types,validation:f.validation||[],error:f.error||''})),selectedFc:{file:r.selectedFc.file,sheet:r.selectedFc.sheet},counts:r.counts,exceptions:r.anomalies.length,templates:r.templateStatus,reportStatus:r.reportStatus,expectShipment:'PENDING',goldenSample:'NOT CERTIFIED'};
+    const audit={build:window.NBYBuild||{status:'BUILD METADATA UNAVAILABLE'},version:'2.1.1',processedAt:new Date().toISOString(),manifestDate:r.target,reportDates:r.reportDates,sourceSelections:r.sourceDecisions,source:state.files.map(f=>({name:f.name,size:f.size,importedAt:f.importedAt,types:f.types,validation:f.validation||[],error:f.error||''})),selectedFc:{file:r.selectedFc.file,sheet:r.selectedFc.sheet},counts:r.counts,exceptions:r.anomalies.length,templates:r.templateStatus,reportStatus:r.reportStatus,expectShipment:'PENDING',goldenSample:'NOT CERTIFIED'};
     r.audit=audit;try{const history=JSON.parse(localStorage.getItem('nby-audit')||'[]');history.unshift(audit);localStorage.setItem('nby-audit',JSON.stringify(history.slice(0,30)));}catch(e){};
     r.outputFiles=files;r.outputTestSummary=testSummary;renderReportStatuses();renderOutputFiles();return files;
   }
