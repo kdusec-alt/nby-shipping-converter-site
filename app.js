@@ -101,7 +101,17 @@
     for (const [fileIndex,file] of incoming.entries()) {
       if(!expectedKind)status('bulkProcessing',{current:fileIndex+1,total:incoming.length});
       if(state.files.some(f=>f.name===file.name)){state.files=state.files.filter(f=>f.name!==file.name);state.sheets=state.sheets.filter(s=>s.file!==file.name);}
-      try { let parsed=await parseFile(file,expectedKind);if(expectedKind&&expectedKind!=='REFERENCE'){const accepted=parsed.filter(x=>x.kind===expectedKind);if(!accepted.length)throw Error(t('wrongSource',{expected:expectedKind,actual:[...new Set(parsed.map(x=>x.kind))].join(', ')||t('unrecognizedSheet')}));parsed=accepted;}if(!parsed.length)throw Error(t('unrecognizedSheet'));status('validateColumns');await new Promise(resolve=>setTimeout(resolve,0));const validation=validateFileRows(parsed);state.files.push({name:file.name,size:file.size,importedAt:new Date().toISOString(),expectedKind,types:[...new Set(parsed.map(x=>x.kind))],sheetCount:parsed.length,validation,sourceFile:file}); state.sheets.push(...parsed);recognized++; }
+      try { let parsed=await parseFile(file,expectedKind);if(expectedKind&&expectedKind!=='REFERENCE'){const accepted=parsed.filter(x=>x.kind===expectedKind);if(!accepted.length)throw Error(t('wrongSource',{expected:expectedKind,actual:[...new Set(parsed.map(x=>x.kind))].join(', ')||t('unrecognizedSheet')}));parsed=accepted;}if(!parsed.length)throw Error(t('unrecognizedSheet'));status('validateColumns');await new Promise(resolve=>setTimeout(resolve,0));const validation=validateFileRows(parsed);state.files.push({name:file.name,size:file.size,importedAt:new Date().toISOString(),expectedKind,types:[...new Set(parsed.map(x=>x.kind))],sheetCount:parsed.length,validation,sourceFile:file}); state.sheets.push(...parsed);recognized++;
+        const candidate=parsed.find(x=>x.kind==='人工成品'&&x.rows.some(r=>Object.hasOwn(r,'ZRSD1019')&&Object.hasOwn(r,'MB52')));
+        if(candidate&&!state.templates.data){
+          const message={zh:'偵測到 Data Shipping 人工成品。是否將此 XLSX 設為固定樣板並儲存在此瀏覽器？',en:'A Data Shipping manual report was detected. Save this XLSX as the template in this browser?',vi:'Đã nhận diện báo cáo Data Shipping. Lưu tệp XLSX này làm mẫu trong trình duyệt?'}[language];
+          if(!/\.xlsx$/i.test(file.name)){
+            status('xlsxTemplateRequired');
+          }else if(window.confirm(message)){
+            try{const template={bytes:new Uint8Array(await file.arrayBuffer()),name:file.name};saveTemplate('data',template);state.templates.data=template;renderTemplateNames();}
+            catch(error){console.warn(error);status('templateSaveFailed');}
+          }
+        } }
       catch(e) { state.files.push({name:file.name,size:file.size,importedAt:new Date().toISOString(),expectedKind,types:['讀取失敗'],sheetCount:0,error:e.message,sourceFile:file}); }
     }
     state.busy=false;renderSources(); renderSourceChoices();renderSourceOverrides();status(state.files.some(f=>!f.error&&f.sheetCount)?(expectedKind?'importDone':'bulkImported'):'allImportsFailed',expectedKind?{}:{count:incoming.length,recognized}); $('runButton').disabled=state.sheets.length===0; $('clearButton').disabled=false;
@@ -208,7 +218,7 @@
     const selectedDates=[...new Set(fcRows.map(dateOf).filter(Boolean))];
     if(!/^\d{4}-\d{2}-\d{2}$/.test(target))throw Error('請選擇有效日期');
     const manual=validateManual(manualSheets,orders,upsRows,sfRows,mb52);
-    manual.lines.filter(x=>x.結果!=='通過').forEach(x=>add('中','人工成品逐筆比對差異',x.工單,x.差異||x.結果));
+
     state.result={target,reportDates,sourceDecisions,orders,upsRows,sfRows,anomalies,manual,counts:{fcRaw:selectedFc?.s.rows.length||0,fcDate:fcRows.length,orders:orders.length,ordersRows:selectedOrders.length,dataRows:selectedData.length,statusRows:selectedStatus.length,sap:sap.length,mb52:mb52.length,ups:ups.length,sf:sf.length,manualFiles:new Set(manualSheets.map(x=>x.file)).size},selectedFc:selectedFc?{...selectedFc.s,linked:selectedFc.linked,rate:selectedFc.rate,rows:selectedFc.rows,ordersRows:selectedFc.ordersRows,dataRows:selectedFc.dataRows,statusRows:selectedFc.statusRows}:null};
     await buildOutputs(); renderResults();
   }
@@ -222,6 +232,11 @@
       const rows=s.rows;
       const baselineRows=rows.filter(r=>value(r,'Work Order Nbr')&&value(r,'Manifest Scan Date'));
       if(baselineRows.length){
+        const hasDataColumns=Object.keys(baselineRows[0]).some(k=>norm(k)==='ZRSD1019');
+        if(!hasDataColumns || /\(2\)/.test(s.sheet)){
+          summary(s,'人工報表驗收未執行',baselineRows.length,0,'缺少獨立來源或此工作表為中間加工階段');
+          continue;
+        }
         let matched=0,checks=0,matches=0;
         for(const row of baselineRows){
           const wo=norm(value(row,'Work Order Nbr')), order=byWO.get(wo), differences=[];
@@ -290,7 +305,11 @@
   const metricKeys=['metricOrders','metricData','metricStatus','metricSap','metricMb','metricExceptions'];
   function renderResults(){
     const r=state.result;$('results').classList.remove('hidden');
-    const m=[[t('metricOrders'),r.counts.ordersRows,r.reportDates.orders],[t('metricData'),r.counts.dataRows,r.reportDates.data],[t('metricStatus'),r.counts.statusRows,t('statusUnit')],[t('metricSap'),r.counts.sap,t('statusSap')],[t('metricMb'),r.counts.mb52,t('statusMb')],[t('metricExceptions'),r.anomalies.length,t('statusRules')]];
+    const missing=r.anomalies.filter(x=>x.異常類型==='Orders Update — Missing Required Source').length;
+    const shipment=r.anomalies.length-missing;
+    const validationDiff=r.manual.lines.filter(x=>x.結果!=='通過').length;
+    const labels={zh:['出貨異常','必要來源缺漏','人工報表驗收差異','系統操作資訊'],en:['Shipment exceptions','Missing required sources','Manual report differences','Processing information'],vi:['Ngoại lệ giao hàng','Thiếu nguồn bắt buộc','Chênh lệch báo cáo thủ công','Thông tin xử lý']}[language];
+    const m=[[labels[0],shipment,''],[labels[1],missing,''],[labels[2],validationDiff,''],[labels[3],Object.keys(r.sourceDecisions).length,''],[t('metricOrders'),r.counts.ordersRows,r.reportDates.orders],[t('metricData'),r.counts.dataRows,r.reportDates.data],[t('metricStatus'),r.counts.statusRows,t('statusUnit')],[t('metricSap'),r.counts.sap,t('statusSap')],[t('metricMb'),r.counts.mb52,t('statusMb')]];
     $('metrics').innerHTML=m.map(x=>`<div class="metric"><span>${escapeHtml(x[0])}</span><strong>${escapeHtml(x[1])}</strong><small>${escapeHtml(x[2])}</small></div>`).join('')+`<div class="source-note"><strong>${escapeHtml(t('sourceNote'))}</strong><span>${escapeHtml(r.selectedFc?.file||t('genericSource'))} · ${escapeHtml(r.selectedFc?.sheet||'')} · ${escapeHtml(t('sourceMatch',{count:r.counts.orders,rate:r.counts.orders?Math.round(r.selectedFc.linked/Math.max(1,r.counts.orders)*100):0}))}</span><small>${escapeHtml(t('sourceNoteText'))}</small></div>`;
     renderTable();
   }
@@ -384,7 +403,7 @@
     testSummary.push({Check:'Output validation',Rule:'Generated workbook and source readiness still require manual row-by-row review',Actual:Object.keys(files).join(', '),Status:'PENDING MANUAL VALIDATION',Source:'Generated file list'});
     make(outputNames[5],[['Exceptions',exceptions],['SF Quantity References',englishRows(r.sfRows)],['UPS Quantity Status',englishRows(r.upsRows)],['Shipping Status Diagnostics',englishRows(statusSummary)],['Test Result',testSummary],['Template Status',r.templateStatus.map(Status=>({Status}))],['Processing Log',state.files.map(f=>({File:f.name,Bytes:f.size,ImportedAt:f.importedAt,Types:f.types.join(', '),Error:f.error||'',Validation:JSON.stringify(f.validation||[]),ReportDates:JSON.stringify(r.reportDates)}))],['Golden Sample Differences',goldenDifferences],['Golden Sample Summary',englishRows(r.manual.summaries.map(({details,...x})=>x))]]);
     await buildReady;
-    const audit={build:{...window.NBYBuild},version:'2.1.3',sapPaaByDate:Object.fromEntries(computedDates.map(date=>[date,pairCount(totalDateOrders.get(date),date)])),processedAt:new Date().toISOString(),manifestDate:r.target,reportDates:r.reportDates,sourceSelections:r.sourceDecisions,source:state.files.map(f=>({name:f.name,size:f.size,importedAt:f.importedAt,types:f.types,validation:f.validation||[],error:f.error||''})),selectedFc:{file:r.selectedFc.file,sheet:r.selectedFc.sheet},counts:r.counts,exceptions:r.anomalies.length,templates:r.templateStatus,reportStatus:r.reportStatus,expectShipment:'PENDING',goldenSample:'NOT CERTIFIED'};
+    const audit={build:{...window.NBYBuild},version:'2.1.4',sapPaaByDate:Object.fromEntries(computedDates.map(date=>[date,pairCount(totalDateOrders.get(date),date)])),processedAt:new Date().toISOString(),manifestDate:r.target,reportDates:r.reportDates,sourceSelections:r.sourceDecisions,source:state.files.map(f=>({name:f.name,size:f.size,importedAt:f.importedAt,types:f.types,validation:f.validation||[],error:f.error||''})),selectedFc:{file:r.selectedFc.file,sheet:r.selectedFc.sheet},counts:r.counts,exceptions:r.anomalies.length,templates:r.templateStatus,reportStatus:r.reportStatus,expectShipment:'PENDING',goldenSample:'NOT CERTIFIED'};
     r.audit=audit;try{const history=JSON.parse(localStorage.getItem('nby-audit')||'[]');history.unshift(audit);localStorage.setItem('nby-audit',JSON.stringify(history.slice(0,30)));}catch(e){};
     r.outputFiles=files;r.outputTestSummary=testSummary;renderReportStatuses();renderOutputFiles();return files;
   }
@@ -405,10 +424,10 @@
     if(!window.JSZip){status('zipUnavailable');return;}
     try{const zip=new JSZip();for(const [name,bytes] of Object.entries(files))zip.file(name,bytes);zip.file('Processing Audit.json',JSON.stringify(state.result.audit,null,2));const blob=await zip.generateAsync({type:'blob'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`NBY_Shipping_Outputs_${state.result.target}.zip`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1500);}catch(e){console.error(e);status('zipUnavailable');}
   }
-  Object.assign(i18n.zh,{dateLabel:'Report Date（報表日期）',missingPreviousFc:'缺少 {date} 的 Nike FC 原始資料；Orders Update 必須使用 Report Date 前一天的 Manifest Scan Date。請批次補入該日期原始檔。',fcSourceLabel:'已匯入 FC 日期來源（系統自動分配）'});
-  Object.assign(i18n.en,{dateLabel:'Report Date',missingPreviousFc:'Missing raw Nike FC data for {date}. Orders Update requires the previous day’s Manifest Scan Date. Import the raw file for that date.',fcSourceLabel:'Imported FC sources (automatically assigned)'});
-  Object.assign(i18n.vi,{dateLabel:'Ngày báo cáo (Report Date)',missingPreviousFc:'Thiếu dữ liệu Nike FC gốc ngày {date}. Orders Update sử dụng Manifest Scan Date của ngày trước ngày báo cáo. Vui lòng tải thêm tệp gốc của ngày đó.',fcSourceLabel:'Nguồn FC đã tải (tự động phân bổ)'});
-  window.NBYBuild={version:'2.1.2',buildId:'shipping-2.1.3-r1',gitCommitSha:null,deployedAt:null};
+  Object.assign(i18n.zh,{xlsxTemplateRequired:'已辨識人工成品。請在 Excel 另存為 XLSX，再匯入以設定樣板。',templateSaveFailed:'樣板無法儲存，請檢查瀏覽器儲存空間。',dateLabel:'Report Date（報表日期）',missingPreviousFc:'缺少 {date} 的 Nike FC 原始資料；Orders Update 必須使用 Report Date 前一天的 Manifest Scan Date。請批次補入該日期原始檔。',fcSourceLabel:'已匯入 FC 日期來源（系統自動分配）'});
+  Object.assign(i18n.en,{xlsxTemplateRequired:'Manual report detected. Save it as XLSX in Excel and import it to set the template.',templateSaveFailed:'Could not save template. Check browser storage.',dateLabel:'Report Date',missingPreviousFc:'Missing raw Nike FC data for {date}. Orders Update requires the previous day’s Manifest Scan Date. Import the raw file for that date.',fcSourceLabel:'Imported FC sources (automatically assigned)'});
+  Object.assign(i18n.vi,{xlsxTemplateRequired:'Đã nhận diện báo cáo thủ công. Lưu thành XLSX trong Excel rồi tải lên để thiết lập mẫu.',templateSaveFailed:'Không thể lưu mẫu. Vui lòng kiểm tra dung lượng trình duyệt.',dateLabel:'Ngày báo cáo (Report Date)',missingPreviousFc:'Thiếu dữ liệu Nike FC gốc ngày {date}. Orders Update sử dụng Manifest Scan Date của ngày trước ngày báo cáo. Vui lòng tải thêm tệp gốc của ngày đó.',fcSourceLabel:'Nguồn FC đã tải (tự động phân bổ)'});
+  window.NBYBuild={version:'2.1.4',buildId:'shipping-2.1.4-r1',gitCommitSha:null,deployedAt:null};
   const buildLabel=document.getElementById('buildInfo');
   function showBuild(){
     if(!buildLabel)return;
