@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <meta name="description" content="NBY Shipping Data Converter — Daily reconciliation · v2" />
   <title>NBY Shipping Data Converter</title>
-  <link rel="stylesheet" href="styles.css?v=2.5" />
+  <link rel="stylesheet" href="styles.css?v=2.6" />
   <script src="vendor/xlsx.full.min.js"></script>
   <script src="vendor/jszip.min.js"></script>
   <script defer src="engine.js"></script>
   <script defer src="templates.js"></script>
-  <script defer src="app.js?v=2.5"></script>
+  <script defer src="app.js?v=2.6"></script>
 </head>
 <body>
   <header class="topbar">
@@ -20,7 +20,7 @@
   <main>
     <section class="hero">
       <div><p class="eyebrow" data-i18n="eyebrow">DAILY SHIPPING WORKSPACE</p><h1 data-i18n="heroTitle">出貨資料轉檔與逐筆核對</h1><p class="lede" data-i18n="lede">匯入 Nike FC、SAP、UPS、SF Baozun 來源，再與人工成品逐筆比對。原始檔不會上傳到伺服器。</p></div>
-      <label class="date-control"><span id="dateLabel" data-i18n="dateLabel">工單核對基準日</span><input id="asOfDate" type="date" value="" /></label>
+      <label class="date-control"><span id="dateLabel" data-i18n="dateLabel">本次出貨基準日</span><input id="asOfDate" type="date" value="" /></label>
     </section>
 
     <section class="upload-panel">
@@ -34,7 +34,7 @@
         <article class="source-upload"><div><h3>SF Baozun</h3><span data-source-status="SF Baozun" class="source-readiness">等待檔案</span></div><label class="secondary-button" for="sfFiles"><span data-i18n="addFiles">新增檔案</span></label><button type="button" class="secondary-button" data-replace-source="SF Baozun"><span data-i18n="replaceFile">替換檔案</span></button><input id="sfFiles" data-source-file="SF Baozun" type="file" multiple accept=".xls,.xlsx,.xlsm,.csv"></article>
       </div></details>
       <div id="sourceList" class="source-list empty" data-i18n="noFiles">尚未匯入檔案</div>
-      <details class="individual-import"><summary data-i18n="optionalUpload">選填參考檔：AWB 或人工成品</summary><div class="optional-import"><div><span data-source-status="AWB Map" class="source-readiness">Optional / 選填 · Waiting for File / 等待檔案</span><label class="secondary-button" for="awbFiles"><span data-i18n="addAwb">新增 AWB</span></label><button type="button" class="secondary-button" data-replace-source="AWB Map" data-i18n="replaceAwb">替換 AWB</button><input id="awbFiles" data-source-file="AWB Map" type="file" multiple accept=".xls,.xlsx,.xlsm,.csv"></div><div><span class="source-readiness" data-i18n="manualReference">Manual Reference / 人工成品與歷史</span><label class="secondary-button" for="referenceFiles"><span data-i18n="chooseReference">選擇參考檔</span></label><input id="referenceFiles" data-source-file="REFERENCE" type="file" multiple accept=".xls,.xlsx,.xlsm,.csv"></div></div></details><div class="report-dates"><label><span data-i18n="ordersDate">Orders Update 日期</span><input id="ordersDate" type="date" value=""></label><label><span data-i18n="dataDate">Data Shipping 日期</span><input id="dataDate" type="date" value=""></label><label><span data-i18n="statusStart">Shipping Status 起日</span><input id="statusStart" type="date" value=""></label><label><span data-i18n="statusEnd">Shipping Status 迄日</span><input id="statusEnd" type="date" value=""></label></div>
+      <details class="individual-import"><summary data-i18n="optionalUpload">選填參考檔：AWB 或人工成品</summary><div class="optional-import"><div><span data-source-status="AWB Map" class="source-readiness">Optional / 選填 · Waiting for File / 等待檔案</span><label class="secondary-button" for="awbFiles"><span data-i18n="addAwb">新增 AWB</span></label><button type="button" class="secondary-button" data-replace-source="AWB Map" data-i18n="replaceAwb">替換 AWB</button><input id="awbFiles" data-source-file="AWB Map" type="file" multiple accept=".xls,.xlsx,.xlsm,.csv"></div><div><span class="source-readiness" data-i18n="manualReference">Manual Reference / 人工成品與歷史</span><label class="secondary-button" for="referenceFiles"><span data-i18n="chooseReference">選擇參考檔</span></label><input id="referenceFiles" data-source-file="REFERENCE" type="file" multiple accept=".xls,.xlsx,.xlsm,.csv"></div></div></details><details class="report-date-overrides"><summary data-i18n="dateOverrides">進階日期設定（僅有不同報表日期時修改）</summary><p data-i18n="dateOverrideHint">預設使用上方的本次出貨基準日。只有報表日期不同時才需要填寫；留空即沿用基準日。</p><div class="report-dates"><label><span data-i18n="ordersDate">Orders Update 日期</span><input id="ordersDate" type="date" value=""></label><label><span data-i18n="dataDate">Data Shipping 日期</span><input id="dataDate" type="date" value=""></label><label><span data-i18n="statusStart">Shipping Status 起日</span><input id="statusStart" type="date" value=""></label><label><span data-i18n="statusEnd">Shipping Status 迄日</span><input id="statusEnd" type="date" value=""></label></div></details>
       <div class="setup-grid"><label><span data-i18n="fcSourceLabel">本次 FC 來源</span><select id="fcSource"><option value="" data-i18n="importFirst">請先匯入來源</option></select></label></div>
       <details class="template-panel"><summary data-i18n="templateTitle">正式 Excel 樣板（保留原始格式、公式與工作表）</summary><p data-i18n="templateHint">分別載入既有 .xlsx 成品作為樣板。樣板不作為原始資料；未提供時輸出 DRAFT 資料版。若樣板結構無法安全填入，該正式檔不會產生。</p><div class="setup-grid">
       <label><span data-i18n="ordersTemplate">Orders Update 樣板</span><input data-template="orders" type="file" accept=".xlsx"></label>
