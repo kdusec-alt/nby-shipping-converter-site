@@ -41,7 +41,7 @@
     if (has('Date','Actually shipment','Expect shipment')) return 'Shipping Status Summary';
     if (has('SAP 訂單匹配') || has('核對狀態') || has('Work Order Nbr','SAP SD Document ZRSD')) return '人工成品';
     if (has('Work Order Nbr','Manifest Scan Date') && (has('ZRSD1019') || has('MB52') || has('Pick up date') || has('Report date'))) return '人工成品';
-    if (has('Work Order Nbr','Manifest Scan Date','Shipper')) return 'Nike FC';
+    if (has('Work Order Nbr','Shipper') && (has('Manifest Scan Date') || has('Order State'))) return 'Nike FC';
     if (has('OrderNumber','ConsolidationShipmentId')) return 'AWB Map';
     if (has('Work Order Number','Tracking Number')) return 'SF Baozun';
     if (has('Tracking Number','Ship Date') && (has('Service') || /UPS|Detailed Report/i.test(fileName))) return 'UPS';
@@ -54,7 +54,7 @@
     let headerAt = -1;
     for (let i=0;i<Math.min(grid.length,15);i++) {
       const line = grid[i].map(norm);
-      if ((line.includes('WORK ORDER NBR') && line.includes('MANIFEST SCAN DATE')) ||
+      if ((line.includes('WORK ORDER NBR') && (line.includes('MANIFEST SCAN DATE') || line.includes('ORDER STATE'))) ||
           (expectedKind==='Nike FC' && (line.includes('WORK ORDER NBR') || line.includes('MANIFEST SCAN DATE'))) ||
           (expectedKind==='SAP ZRSD1019' && (line.includes('CUSTOMER REFERENCE') || line.includes('SD DOCUMENT'))) ||
           (expectedKind==='SAP MB52' && (line.includes('SD DOCUMENT') || line.includes('MATERIAL'))) ||
@@ -119,7 +119,7 @@
     state.busy=false;renderSources(); renderSourceChoices();renderSourceOverrides();status(state.files.some(f=>!f.error&&f.sheetCount)?(expectedKind?'importDone':'bulkImported'):'allImportsFailed',expectedKind?{}:{count:incoming.length,recognized}); $('runButton').disabled=state.sheets.length===0; $('clearButton').disabled=false;
   }
   const schemas={
-    'Nike FC':{required:['Work Order Nbr','Manifest Scan Date','Shipper'],recommended:['Product Name','Tracking Number','Ship Group Nbr']},
+    'Nike FC':{required:['Work Order Nbr','Shipper'],recommended:['Manifest Scan Date','Order State','Product Name','Tracking Number','Ship Group Nbr']},
     'SAP ZRSD1019':{required:['Customer Reference','SD Document'],recommended:['Material',['Item (SD)','Item','SD Item'],'Confirmed Quantity']},
     'SAP MB52':{required:['SD Document','Material'],recommended:['Storage Location','Batch','Unrestricted','Blocked Stock']},
     'UPS':{required:['Tracking Number'],recommended:['Ship Date']},
@@ -205,12 +205,14 @@
     const selectedOrders=rawRows.filter(row=>dateOf(row)===reportDates.orders);
     const selectedData=rawRows.filter(row=>dateOf(row)===reportDates.data);
     const selectedStatus=rawRows.filter(row=>dateOf(row)&&dateOf(row)<=target);
-    const fcRows=NBYEngine.unique([...selectedOrders,...selectedData,...selectedStatus]);
+    const undatedRows=rawRows.filter(row=>!dateOf(row));
+    const fcRows=NBYEngine.unique([...selectedOrders,...selectedData,...selectedStatus,...undatedRows]);
     const selected={file:[...new Set(rawFcSheets.map(s=>s.file))].join(', '),sheet:'Multiple raw FC worksheets',rows:fcRows,processed:false};
     const selectedFc={s:selected,rows:fcRows,ordersRows:selectedOrders,dataRows:selectedData,statusRows:selectedStatus};
     const manualSheets=state.sheets.filter(s=>s.kind==='人工成品');
-    const {orders,upsRows,sfRows,anomalies}=NBYEngine.reconcile({fc:selectedData,sap,stock:mb52,ups,sf,awb:source('AWB Map'),date:target,cleanDate});
+    const {orders,upsRows,sfRows,anomalies}=NBYEngine.reconcile({fc:NBYEngine.unique([...selectedData,...undatedRows]),sap,stock:mb52,ups,sf,awb:source('AWB Map'),date:target,cleanDate});
     const add=(severity,category,key,detail)=>anomalies.push({嚴重度:severity,異常類型:category,工單或Tracking:key,說明:detail});
+    if(undatedRows.length)add('中','Manifest Scan Date 未提供','Nike FC',`${undatedRows.length} 筆僅執行工單及物流關聯；出貨日期和報表範圍需確認下載批次規則`);
     if(!selectedOrders.length)add('中','Orders Update — Missing Required Source',reportDates.orders,t('missingPreviousFc',{date:reportDates.orders}));
     selectedFc.linked=orders.filter(o=>o.sapMatch).length;selectedFc.rate=orders.length?selectedFc.linked/orders.length:0;
 
@@ -429,7 +431,7 @@
     testSummary.push({Check:'Output validation',Rule:'Generated workbook and source readiness still require manual row-by-row review',Actual:Object.keys(files).join(', '),Status:'PENDING MANUAL VALIDATION',Source:'Generated file list'});
     make(outputNames[5],[['Exceptions',exceptions],['SF Quantity References',englishRows(r.sfRows)],['UPS Quantity Status',englishRows(r.upsRows)],['Shipping Status Diagnostics',englishRows(statusSummary)],['Test Result',testSummary],['Template Status',r.templateStatus.map(Status=>({Status}))],['Processing Log',state.files.map(f=>({File:f.name,Bytes:f.size,ImportedAt:f.importedAt,Types:f.types.join(', '),Error:f.error||'',Validation:JSON.stringify(f.validation||[]),ReportDates:JSON.stringify(r.reportDates)}))],['Golden Sample Differences',goldenDifferences],['Golden Sample Summary',englishRows(r.manual.summaries.map(({details,...x})=>x))]]);
     await buildReady;
-    const audit={build:{...window.NBYBuild},version:'2.1.10 Beta',sapPaaByDate:Object.fromEntries(computedDates.map(date=>[date,pairCount(totalDateOrders.get(date),date)])),processedAt:new Date().toISOString(),manifestDate:r.target,reportDates:r.reportDates,sourceSelections:r.sourceDecisions,source:state.files.map(f=>({name:f.name,size:f.size,importedAt:f.importedAt,types:f.types,validation:f.validation||[],error:f.error||''})),selectedFc:{file:r.selectedFc.file,sheet:r.selectedFc.sheet},counts:r.counts,exceptions:r.anomalies.length,templates:r.templateStatus,templateDetails:Object.fromEntries(['orders','data','status'].map(type=>{const t=state.templates[type];return [type,{file:t?.name||null,size:t?.bytes?.byteLength||0,storage:t?.storage||'missing',read:t?.read||'missing',worksheets:t?.sheets||[],applied:r.templateStatus.find(x=>x.startsWith(({orders:'Orders Update.xlsx',data:'Data Shipping.xlsx',status:'Shipping Status.xlsx'})[type]))||'',error:state.templateErrors[type]||null}]})),reportStatus:r.reportStatus,expectShipment:'MANIFEST_DATE_PAA_VERIFIED_ACTUAL_SHIPMENT_PENDING_HANDOVER_RULE',goldenSample:'NOT CERTIFIED'};
+    const audit={build:{...window.NBYBuild},version:'2.1.11 Beta',sapPaaByDate:Object.fromEntries(computedDates.map(date=>[date,pairCount(totalDateOrders.get(date),date)])),processedAt:new Date().toISOString(),manifestDate:r.target,reportDates:r.reportDates,sourceSelections:r.sourceDecisions,source:state.files.map(f=>({name:f.name,size:f.size,importedAt:f.importedAt,types:f.types,validation:f.validation||[],error:f.error||''})),selectedFc:{file:r.selectedFc.file,sheet:r.selectedFc.sheet},counts:r.counts,exceptions:r.anomalies.length,templates:r.templateStatus,templateDetails:Object.fromEntries(['orders','data','status'].map(type=>{const t=state.templates[type];return [type,{file:t?.name||null,size:t?.bytes?.byteLength||0,storage:t?.storage||'missing',read:t?.read||'missing',worksheets:t?.sheets||[],applied:r.templateStatus.find(x=>x.startsWith(({orders:'Orders Update.xlsx',data:'Data Shipping.xlsx',status:'Shipping Status.xlsx'})[type]))||'',error:state.templateErrors[type]||null}]})),reportStatus:r.reportStatus,expectShipment:'MANIFEST_DATE_PAA_VERIFIED_ACTUAL_SHIPMENT_PENDING_HANDOVER_RULE',goldenSample:'NOT CERTIFIED'};
     r.audit=audit;try{const history=JSON.parse(localStorage.getItem('nby-audit')||'[]');history.unshift(audit);localStorage.setItem('nby-audit',JSON.stringify(history.slice(0,30)));}catch(e){};
     r.outputFiles=files;r.outputTestSummary=testSummary;renderReportStatuses();renderOutputFiles();return files;
   }
@@ -453,7 +455,7 @@
   Object.assign(i18n.zh,{xlsxTemplateRequired:'已辨識人工成品。請在 Excel 另存為 XLSX，再匯入以設定樣板。',templateSaveFailed:'樣板無法儲存，請檢查瀏覽器儲存空間。',dateLabel:'Report Date（報表日期）',missingPreviousFc:'Nike FC 下載範圍未涵蓋 {date} 的 Manifest 資料，請下載包含該日期資料的 FC 原始檔。',fcSourceLabel:'已匯入 FC 日期來源（系統自動分配）'});
   Object.assign(i18n.en,{xlsxTemplateRequired:'Manual report detected. Save it as XLSX in Excel and import it to set the template.',templateSaveFailed:'Could not save template. Check browser storage.',dateLabel:'Report Date',missingPreviousFc:'Missing raw Nike FC data for {date}. Orders Update requires the previous day’s Manifest Scan Date. Import the raw file for that date.',fcSourceLabel:'Imported FC sources (automatically assigned)'});
   Object.assign(i18n.vi,{xlsxTemplateRequired:'Đã nhận diện báo cáo thủ công. Lưu thành XLSX trong Excel rồi tải lên để thiết lập mẫu.',templateSaveFailed:'Không thể lưu mẫu. Vui lòng kiểm tra dung lượng trình duyệt.',dateLabel:'Ngày báo cáo (Report Date)',missingPreviousFc:'Thiếu dữ liệu Nike FC gốc ngày {date}. Orders Update sử dụng Manifest Scan Date của ngày trước ngày báo cáo. Vui lòng tải thêm tệp gốc của ngày đó.',fcSourceLabel:'Nguồn FC đã tải (tự động phân bổ)'});
-  window.NBYBuild={version:'2.1.10 Beta',buildId:'shipping-2.1.10-beta1',gitCommitSha:null,deployedAt:null};
+  window.NBYBuild={version:'2.1.11 Beta',buildId:'shipping-2.1.11-beta1',gitCommitSha:null,deployedAt:null};
   const buildLabel=document.getElementById('buildInfo');
   function showBuild(){
     if(!buildLabel)return;
@@ -461,7 +463,7 @@
     buildLabel.textContent=`Version ${b.version} · Build ${b.buildId} · Git SHA ${b.gitCommitSha||'—'} · Deployment UTC ${b.deployedAt||'—'}`;
   }
   showBuild();
-  const buildReady=typeof fetch==='function'?fetch('build-info.json?build=shipping-2.1.10-beta1',{cache:'no-store'}).then(r=>r.ok?r.json():null).then(info=>{
+  const buildReady=typeof fetch==='function'?fetch('build-info.json?build=shipping-2.1.11-beta1',{cache:'no-store'}).then(r=>r.ok?r.json():null).then(info=>{
     if(info?.buildId===window.NBYBuild.buildId){Object.assign(window.NBYBuild,info);showBuild();}
   }).catch(()=>{}):Promise.resolve();
   const templateKey=type=>'nby-template-v1-'+type;
